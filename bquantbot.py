@@ -21,16 +21,22 @@ st.markdown("""
     
     #MainMenu, footer, header, .stDeployButton { display: none !important; }
     
-    .stApp {
-        background: #050508;
+    /* FONDO PRINCIPAL - NO CAMBIA */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], 
+    section[data-testid="stSidebar"], .main, .main .block-container {
+        background: #050508 !important;
         background-image: 
             radial-gradient(ellipse at top left, rgba(99, 102, 241, 0.18) 0%, transparent 50%),
-            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
-        min-height: 100vh;
+            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.12) 0%, transparent 50%) !important;
+    }
+    
+    [data-testid="stBottomBlockContainer"] {
+        background: transparent !important;
+        padding-bottom: 0 !important;
     }
     
     .block-container {
-        padding: 1.5rem 1.5rem 1rem 1.5rem !important;
+        padding: 1.5rem 1.5rem 0 1.5rem !important;
         max-width: 850px !important;
     }
     
@@ -158,52 +164,79 @@ st.markdown("""
         color: rgba(255, 255, 255, 0.92) !important;
     }
     
-    /* Chat input - MÁS GRANDE Y ARRIBA */
+    /* ============================================
+       CHAT INPUT - MÁS GRANDE Y MÁS ARRIBA
+       ============================================ */
+    
+    [data-testid="stBottom"] {
+        background: transparent !important;
+        position: fixed !important;
+        bottom: 15% !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        width: 100% !important;
+        max-width: 800px !important;
+        padding: 0 1.5rem !important;
+    }
+    
+    [data-testid="stBottomBlockContainer"] {
+        background: transparent !important;
+    }
+    
     [data-testid="stChatInput"] {
-        padding-top: 1rem !important;
+        background: transparent !important;
     }
     
     [data-testid="stChatInput"] > div {
-        background: rgba(12, 12, 20, 0.95) !important;
-        border: 1px solid rgba(99, 102, 241, 0.3) !important;
-        border-radius: 20px !important;
-        padding: 0.3rem !important;
+        background: rgba(12, 12, 20, 0.98) !important;
+        border: 1.5px solid rgba(99, 102, 241, 0.35) !important;
+        border-radius: 24px !important;
+        padding: 0.5rem !important;
         box-shadow: 
-            0 0 60px rgba(99, 102, 241, 0.12),
-            0 8px 30px rgba(0, 0, 0, 0.3) !important;
+            0 0 80px rgba(99, 102, 241, 0.15),
+            0 10px 40px rgba(0, 0, 0, 0.4) !important;
         backdrop-filter: blur(20px) !important;
         transition: all 0.3s ease !important;
     }
     
     [data-testid="stChatInput"] > div:focus-within {
-        border-color: rgba(99, 102, 241, 0.6) !important;
+        border-color: rgba(99, 102, 241, 0.7) !important;
         box-shadow: 
-            0 0 80px rgba(99, 102, 241, 0.18),
-            0 8px 40px rgba(0, 0, 0, 0.35) !important;
+            0 0 100px rgba(99, 102, 241, 0.2),
+            0 10px 50px rgba(0, 0, 0, 0.5) !important;
     }
     
-    [data-testid="stChatInput"] input {
+    [data-testid="stChatInput"] input,
+    [data-testid="stChatInput"] textarea {
         color: white !important;
-        font-size: 1.05rem !important;
-        padding: 0.9rem 1rem !important;
+        font-size: 1.15rem !important;
+        padding: 1.1rem 1.2rem !important;
+        background: transparent !important;
     }
     
-    [data-testid="stChatInput"] input::placeholder {
+    [data-testid="stChatInput"] input::placeholder,
+    [data-testid="stChatInput"] textarea::placeholder {
         color: rgba(255, 255, 255, 0.4) !important;
+        font-size: 1.1rem !important;
     }
     
     [data-testid="stChatInput"] button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         border: none !important;
-        border-radius: 14px !important;
-        padding: 0.7rem 0.9rem !important;
-        margin: 0.35rem !important;
+        border-radius: 16px !important;
+        padding: 0.9rem 1.1rem !important;
+        margin: 0.4rem !important;
         transition: all 0.3s ease !important;
     }
     
     [data-testid="stChatInput"] button:hover {
-        transform: scale(1.08) !important;
-        box-shadow: 0 0 25px rgba(99, 102, 241, 0.5) !important;
+        transform: scale(1.1) !important;
+        box-shadow: 0 0 30px rgba(99, 102, 241, 0.6) !important;
+    }
+    
+    [data-testid="stChatInput"] button svg {
+        width: 22px !important;
+        height: 22px !important;
     }
     
     /* Source tag */
@@ -241,6 +274,10 @@ st.markdown("""
         .logo { font-size: 2.2rem; }
         .welcome-title { font-size: 1.25rem; }
         .block-container { padding: 1rem !important; }
+        [data-testid="stBottom"] {
+            bottom: 10% !important;
+            padding: 0 1rem !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -371,7 +408,7 @@ if not st.session_state.messages:
                 st.session_state.pending_query = f"¿Qué dice Buffett sobre {s.lower()}?"
                 st.rerun()
 
-# Procesar query pendiente (de sugerencias)
+# Procesar query pendiente
 if st.session_state.pending_query and letters:
     query = st.session_state.pending_query
     st.session_state.pending_query = None

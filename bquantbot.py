@@ -395,7 +395,7 @@ if "messages" not in st.session_state:
 # ============================================
 st.markdown("""
 <div class="logo-container">
-    <div class="logo">⚡ BQuant</div>
+    <div class="logo">⚡ BQuantChatBot</div>
     <div class="tagline">Berkshire Letters AI</div>
     <div class="status-container">
         <div class="status-pill">

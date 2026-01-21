@@ -301,12 +301,24 @@ def search(query: str, index, chunks: list, model, client, top_k: int = 8) -> li
     Búsqueda semántica mejorada:
     1. Expande query a inglés
     2. Busca más chunks
-    3. Filtra por año si se menciona
+    3. Si hay año + concepto, incluye años adyacentes (+1, +2)
     """
     
     # Extraer año si se menciona
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
     year_filter = year_match.group(1) if year_match else None
+    
+    # Detectar si es solo "carta de X" o "año X + concepto"
+    # Si hay más palabras además del año, es año + concepto
+    query_without_year = re.sub(r'\b(19[7-9]\d|20[0-2]\d)\b', '', query).strip()
+    is_year_plus_concept = year_filter and len(query_without_year.split()) > 3
+    
+    # Si es año + concepto, expandir a años adyacentes (reflexiones posteriores)
+    if is_year_plus_concept:
+        base_year = int(year_filter)
+        valid_years = {str(y) for y in [base_year, base_year + 1, base_year + 2] if 1977 <= y <= 2024}
+    else:
+        valid_years = {year_filter} if year_filter else None
     
     # Traducir/expandir query a inglés
     enhanced_query = enhance_query(query, client)
@@ -314,12 +326,11 @@ def search(query: str, index, chunks: list, model, client, top_k: int = 8) -> li
     # Embedding de la query mejorada
     q_emb = model.encode([enhanced_query], normalize_embeddings=True, convert_to_numpy=True)
     
-    # Buscar más resultados si hay filtro de año
-    k = top_k * 3 if year_filter else top_k
+    # Buscar más resultados
+    k = top_k * 4 if year_filter else top_k * 2
     scores, indices = index.search(q_emb.astype('float32'), min(k, len(chunks)))
     
     results = []
-    seen_years = set()  # Para diversificar años en resultados
     
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0:
@@ -327,15 +338,14 @@ def search(query: str, index, chunks: list, model, client, top_k: int = 8) -> li
         chunk = chunks[idx].copy()
         chunk['score'] = float(score)
         
-        # Filtrar por año si se especificó
-        if year_filter and chunk['year'] != year_filter:
+        # Filtrar por años válidos si se especificó
+        if valid_years and chunk['year'] not in valid_years:
             continue
         
-        # Si no hay filtro de año, diversificar (max 2 chunks por año)
-        if not year_filter:
-            year_count = sum(1 for r in results if r['year'] == chunk['year'])
-            if year_count >= 2:
-                continue
+        # Diversificar: máximo 3 chunks por año
+        year_count = sum(1 for r in results if r['year'] == chunk['year'])
+        if year_count >= 3:
+            continue
         
         results.append(chunk)
         if len(results) >= top_k:

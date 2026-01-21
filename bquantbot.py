@@ -193,6 +193,7 @@ st.markdown("""
         margin-top: 0.8rem;
         padding-top: 0.6rem;
         border-top: 1px dashed var(--border);
+        align-items: center;
     }
     .src {
         background: #111;
@@ -204,6 +205,23 @@ st.markdown("""
         font-weight: 500;
     }
     .src b { color: var(--accent); }
+    
+    .confidence {
+        font-size: 0.68rem;
+        padding: 3px 10px;
+        border-radius: 5px;
+        margin-left: auto;
+    }
+    .confidence.low {
+        background: rgba(255, 152, 0, 0.15);
+        border: 1px solid rgba(255, 152, 0, 0.3);
+        color: #ff9800;
+    }
+    .confidence.medium {
+        background: rgba(255, 235, 59, 0.15);
+        border: 1px solid rgba(255, 235, 59, 0.3);
+        color: #fdd835;
+    }
     
     .footer {
         text-align: center;
@@ -355,17 +373,72 @@ def search(query: str, index, chunks: list, model, client, top_k: int = 8) -> li
 
 
 # ============================================
+# CONFIDENCE DETECTION
+# ============================================
+def calculate_confidence(results: list[dict], query: str) -> tuple[str, float]:
+    """
+    Calcula nivel de confianza basado en:
+    - Scores de los chunks
+    - Cantidad de resultados relevantes
+    - Diversidad de años
+    """
+    if not results:
+        return "none", 0.0
+    
+    scores = [r['score'] for r in results]
+    max_score = max(scores)
+    avg_score = sum(scores) / len(scores)
+    unique_years = len(set(r['year'] for r in results))
+    
+    # Umbrales calibrados para all-MiniLM-L6-v2
+    if max_score >= 0.45 and avg_score >= 0.35:
+        return "high", max_score
+    elif max_score >= 0.30 and avg_score >= 0.25:
+        return "medium", max_score
+    else:
+        return "low", max_score
+
+
+# ============================================
 # GENERATE RESPONSE (MEJORADO)
 # ============================================
-def generate(query: str, results: list[dict], client) -> tuple[str, list]:
-    """Genera respuesta con mejor síntesis"""
+def generate(query: str, results: list[dict], client) -> tuple[str, list, str]:
+    """Genera respuesta con detección de confianza"""
     
-    if not results:
+    confidence_level, confidence_score = calculate_confidence(results, query)
+    
+    if not results or confidence_level == "none":
         system = """Eres el asistente de BQuant sobre las cartas de Warren Buffett (1977-2024).
 Responde amigablemente y sugiere temas: inversión, adquisiciones, crisis, seguros, o años específicos."""
         messages = [{"role": "system", "content": system}, {"role": "user", "content": query}]
+        confidence_level = "none"
+    
+    elif confidence_level == "low":
+        # Baja confianza: advertir al modelo que sea honesto
+        sorted_results = sorted(results, key=lambda x: x['year'])
+        context = "\n\n---\n\n".join([f"[CARTA {r['year']}]\n{r['text']}" for r in sorted_results])
+        
+        system = """Eres un experto en las cartas anuales de Warren Buffett (1977-2024).
+
+⚠️ ALERTA: Los fragmentos recuperados tienen BAJA RELEVANCIA con la pregunta.
+
+INSTRUCCIONES CRÍTICAS:
+1. Si el contexto NO contiene información directamente relevante a la pregunta, DEBES decir:
+   "No encontré información específica sobre [tema] en las cartas de Buffett."
+2. NO inventes información, fechas, ni citas que no estén en el contexto
+3. NO menciones entrevistas, reuniones de accionistas, ni fuentes externas - solo tienes acceso a las cartas anuales
+4. Si hay información tangencialmente relacionada, puedes mencionarla pero aclara que no es una respuesta directa
+5. Responde en español
+
+Es mejor admitir que no tienes la información que inventar una respuesta."""
+
+        messages = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"CONTEXTO (baja relevancia):\n{context}\n\n---\n\nPREGUNTA: {query}"}
+        ]
+    
     else:
-        # Ordenar por año para mejor contexto cronológico
+        # Confianza media/alta: respuesta normal
         sorted_results = sorted(results, key=lambda x: x['year'])
         context = "\n\n---\n\n".join([f"[CARTA {r['year']}]\n{r['text']}" for r in sorted_results])
         
@@ -379,6 +452,7 @@ INSTRUCCIONES:
 5. Si la información no está en el contexto, dilo claramente
 6. Responde en español
 7. Máximo 300 palabras
+8. NUNCA inventes información, fechas o citas - solo usa lo que está en el contexto
 
 IMPORTANTE: Buffett tiene opiniones fuertes y memorables. Captura su tono directo, no lo suavices."""
 
@@ -391,24 +465,46 @@ IMPORTANTE: Buffett tiene opiniones fuertes y memorables. Captura su tono direct
         resp = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages,
-            temperature=0.3,
+            temperature=0.2 if confidence_level == "low" else 0.3,
             max_tokens=700
         )
-        return resp.choices[0].message.content, results
+        return resp.choices[0].message.content, results, confidence_level
     except Exception as e:
-        return f"Error: {e}", []
+        return f"Error: {e}", [], "error"
 
 
 # ============================================
 # UI HELPERS
 # ============================================
-def show_sources(results: list):
+def show_sources(results: list, confidence: str = "high"):
     if not results:
         return
-    # Ordenar años y eliminar duplicados
+    
+    # Indicador de confianza
+    confidence_indicators = {
+        "high": ("🟢", "Alta relevancia"),
+        "medium": ("🟡", "Relevancia media"),
+        "low": ("🟠", "Baja relevancia"),
+        "none": ("🔴", "Sin resultados"),
+        "error": ("❌", "Error")
+    }
+    indicator, label = confidence_indicators.get(confidence, ("⚪", ""))
+    
+    # Años únicos ordenados
     years = sorted(set(r["year"] for r in results))
     pills = ''.join([f'<span class="src"><b>{y}</b></span>' for y in years])
-    st.markdown(f'<div class="sources">{pills}</div>', unsafe_allow_html=True)
+    
+    # Mostrar confianza si no es alta
+    confidence_html = ""
+    if confidence in ["low", "medium"]:
+        confidence_html = f'<span class="confidence {confidence}">{indicator} {label}</span>'
+    
+    st.markdown(f'''
+    <div class="sources">
+        {pills}
+        {confidence_html}
+    </div>
+    ''', unsafe_allow_html=True)
 
 
 # ============================================
@@ -474,8 +570,13 @@ def main():
         st.session_state.messages.append({"role": "user", "content": q})
         
         results = search(q, index, chunks, model, client)
-        response, used = generate(q, results, client)
-        st.session_state.messages.append({"role": "assistant", "content": response, "sources": used})
+        response, used, confidence = generate(q, results, client)
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": response, 
+            "sources": used,
+            "confidence": confidence
+        })
         st.rerun()
     
     # MESSAGES
@@ -483,7 +584,7 @@ def main():
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "⚡"):
             st.write(msg["content"])
             if msg.get("sources"):
-                show_sources(msg["sources"])
+                show_sources(msg["sources"], msg.get("confidence", "high"))
     
     # INPUT
     if prompt := st.chat_input("Pregunta sobre las cartas de Buffett..."):
@@ -495,11 +596,16 @@ def main():
         with st.chat_message("assistant", avatar="⚡"):
             with st.spinner("Buscando..."):
                 results = search(prompt, index, chunks, model, client)
-                response, used = generate(prompt, results, client)
+                response, used, confidence = generate(prompt, results, client)
             st.write(response)
-            show_sources(used)
+            show_sources(used, confidence)
         
-        st.session_state.messages.append({"role": "assistant", "content": response, "sources": used})
+        st.session_state.messages.append({
+            "role": "assistant", 
+            "content": response, 
+            "sources": used,
+            "confidence": confidence
+        })
     
     # FOOTER
     st.markdown("""

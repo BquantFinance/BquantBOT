@@ -13,8 +13,8 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# API Key hardcodeada (CAMBIAR EN PRODUCCIÓN)
-GEMINI_API_KEY = "AIzaSyBuxu0jsV6t0hVBVmksD6LBJhKPu8VjPOY"
+# API Key
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 
 # ============================================
 # ESTILOS CSS PREMIUM
@@ -38,6 +38,10 @@ st.markdown("""
             radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
             radial-gradient(ellipse at center, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
         min-height: 100vh;
+    }
+    
+    .block-container {
+        padding-bottom: 120px !important;
     }
     
     .logo-container {
@@ -114,10 +118,8 @@ st.markdown("""
         display: grid;
         grid-template-columns: repeat(4, 1fr);
         gap: 1rem;
-        margin: 2rem 0;
-        max-width: 900px;
-        margin-left: auto;
-        margin-right: auto;
+        margin: 2rem auto;
+        max-width: 800px;
     }
     
     .stat-card {
@@ -165,10 +167,16 @@ st.markdown("""
     
     .message-row {
         display: flex;
-        margin: 1rem 0;
-        max-width: 900px;
+        margin: 1.25rem 0;
+        max-width: 850px;
         margin-left: auto;
         margin-right: auto;
+        animation: fadeIn 0.3s ease-out;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
     
     .message-row.user { justify-content: flex-end; }
@@ -176,9 +184,9 @@ st.markdown("""
     
     .message-bubble {
         max-width: 80%;
-        padding: 1rem 1.25rem;
+        padding: 1.1rem 1.4rem;
         border-radius: 20px;
-        line-height: 1.6;
+        line-height: 1.7;
         font-size: 0.95rem;
     }
     
@@ -186,7 +194,7 @@ st.markdown("""
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
         color: white;
         border-bottom-right-radius: 6px;
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        box-shadow: 0 4px 25px rgba(99, 102, 241, 0.35);
     }
     
     .message-bubble.assistant {
@@ -194,28 +202,30 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.08);
         color: rgba(255, 255, 255, 0.9);
         border-bottom-left-radius: 6px;
+        backdrop-filter: blur(10px);
     }
     
     .avatar {
-        width: 36px;
-        height: 36px;
-        border-radius: 12px;
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1rem;
-        margin: 0 0.75rem;
+        font-size: 1.1rem;
+        margin: 0 0.85rem;
         flex-shrink: 0;
     }
     
     .avatar.user {
         background: linear-gradient(135deg, #6366f1, #8b5cf6);
         order: 1;
+        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
     }
     
     .avatar.assistant {
-        background: rgba(255, 255, 255, 0.1);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
     }
     
     .source-tag {
@@ -223,46 +233,116 @@ st.markdown("""
         background: rgba(99, 102, 241, 0.15);
         border: 1px solid rgba(99, 102, 241, 0.3);
         color: #a5b4fc;
-        padding: 2px 8px;
-        border-radius: 6px;
-        font-size: 0.7rem;
-        margin-top: 0.5rem;
+        padding: 4px 10px;
+        border-radius: 8px;
+        font-size: 0.72rem;
+        margin-top: 0.75rem;
     }
     
     .stButton > button {
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.1);
         color: rgba(255, 255, 255, 0.8);
-        border-radius: 12px;
-        padding: 0.6rem 1rem;
+        border-radius: 14px;
+        padding: 0.8rem 1.2rem;
         font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         font-weight: 500;
         transition: all 0.3s ease;
+        width: 100%;
     }
     
     .stButton > button:hover {
-        background: rgba(99, 102, 241, 0.2);
+        background: rgba(99, 102, 241, 0.15);
         border-color: rgba(99, 102, 241, 0.4);
         color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.2);
+    }
+    
+    /* ========== INPUT MEJORADO ========== */
+    
+    .stChatInput {
+        position: fixed !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        padding: 1.5rem 2rem 2rem 2rem !important;
+        background: linear-gradient(to top, 
+            rgba(5, 5, 8, 1) 0%, 
+            rgba(5, 5, 8, 0.95) 50%,
+            rgba(5, 5, 8, 0) 100%) !important;
+        z-index: 1000;
     }
     
     .stChatInput > div {
-        max-width: 900px;
-        margin: 0 auto;
-        background: rgba(255, 255, 255, 0.05) !important;
+        max-width: 800px !important;
+        margin: 0 auto !important;
+        background: rgba(255, 255, 255, 0.03) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 16px !important;
+        border-radius: 20px !important;
+        backdrop-filter: blur(20px) !important;
+        box-shadow: 
+            0 4px 30px rgba(0, 0, 0, 0.3),
+            0 0 0 1px rgba(255, 255, 255, 0.05) inset,
+            0 0 60px rgba(99, 102, 241, 0.1) !important;
+        transition: all 0.3s ease !important;
+        padding: 4px !important;
     }
     
-    .stChatInput input {
+    .stChatInput > div:focus-within {
+        border-color: rgba(99, 102, 241, 0.4) !important;
+        box-shadow: 
+            0 4px 30px rgba(0, 0, 0, 0.3),
+            0 0 0 1px rgba(99, 102, 241, 0.2) inset,
+            0 0 80px rgba(99, 102, 241, 0.15) !important;
+    }
+    
+    .stChatInput input, .stChatInput textarea {
         color: white !important;
         font-family: 'Space Grotesk', sans-serif !important;
+        font-size: 1rem !important;
+        padding: 1rem 1.25rem !important;
+        line-height: 1.5 !important;
+        background: transparent !important;
+    }
+    
+    .stChatInput input::placeholder, .stChatInput textarea::placeholder {
+        color: rgba(255, 255, 255, 0.35) !important;
+        font-size: 1rem !important;
+    }
+    
+    .stChatInput button {
+        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
+        border: none !important;
+        border-radius: 14px !important;
+        margin: 6px !important;
+        padding: 10px 16px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .stChatInput button:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4) !important;
+    }
+    
+    .stChatInput button svg {
+        width: 20px !important;
+        height: 20px !important;
+    }
+    
+    /* Input helper text */
+    .input-helper {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.25);
+        font-size: 0.7rem;
+        margin-top: 0.5rem;
+        letter-spacing: 0.5px;
     }
     
     .footer {
         text-align: center;
-        padding: 2rem 0 5rem 0;
+        padding: 1.5rem 0 8rem 0;
         color: rgba(255, 255, 255, 0.25);
         font-size: 0.75rem;
     }
@@ -272,10 +352,36 @@ st.markdown("""
         text-decoration: none;
     }
     
+    /* Typing indicator */
+    .typing-indicator {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 0.5rem 0;
+    }
+    
+    .typing-dot {
+        width: 8px;
+        height: 8px;
+        background: #6366f1;
+        border-radius: 50%;
+        animation: typingBounce 1.4s ease-in-out infinite;
+    }
+    
+    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes typingBounce {
+        0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+        40% { transform: scale(1.2); opacity: 1; }
+    }
+    
     @media (max-width: 768px) {
         .stats-grid { grid-template-columns: repeat(2, 1fr); }
         .logo { font-size: 2.5rem; }
         .message-bubble { max-width: 90%; }
+        .stChatInput { padding: 1rem !important; }
+        .stChatInput > div { border-radius: 16px !important; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -293,8 +399,10 @@ def load_berkshire_letters():
 
 @st.cache_resource
 def init_gemini():
-    genai.configure(api_key=GEMINI_API_KEY)
-    return genai.GenerativeModel('gemini-1.5-flash')
+    if GEMINI_API_KEY:
+        genai.configure(api_key=GEMINI_API_KEY)
+        return genai.GenerativeModel('gemini-1.5-flash')
+    return None
 
 # ============================================
 # BÚSQUEDA EN LAS CARTAS
@@ -419,7 +527,7 @@ if "messages" not in st.session_state:
 # ============================================
 st.markdown("""
 <div class="logo-container">
-    <div class="logo">⚡ BQuant</div>
+    <div class="logo">⚡ BQuantChatBot</div>
     <div class="tagline">Berkshire Letters AI</div>
     <div class="status-container">
         <div class="status-pill">
@@ -505,8 +613,8 @@ for msg in st.session_state.messages:
 # ============================================
 # INPUT
 # ============================================
-if letters:
-    if prompt := st.chat_input("Pregunta sobre las cartas de Buffett..."):
+if letters and model:
+    if prompt := st.chat_input("Pregunta lo que quieras sobre las cartas de Warren Buffett..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         st.markdown(f"""
@@ -516,7 +624,7 @@ if letters:
         </div>
         """, unsafe_allow_html=True)
         
-        with st.spinner("Buscando en las cartas..."):
+        with st.spinner(""):
             response, sources = get_response(prompt, letters, model, st.session_state.messages)
         
         st.session_state.messages.append({
@@ -525,8 +633,10 @@ if letters:
             "sources": sources
         })
         st.rerun()
+elif not letters:
+    st.error("⚠️ No se encontró `berkshire_letters.json`")
 else:
-    st.error("⚠️ No se encontró `data/berkshire_letters.json`. Coloca el archivo en la carpeta `data/`.")
+    st.error("⚠️ Configura GEMINI_API_KEY en los secrets")
 
 # ============================================
 # FOOTER

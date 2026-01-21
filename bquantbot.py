@@ -315,6 +315,37 @@ Examples:
 # ============================================
 # SEARCH
 # ============================================
+def chunk_text(text, chunk_size=1500):
+    """Divide texto en chunks manejables"""
+    # Primero intentar dividir por doble salto de línea
+    if text.count('\n\n') > 5:
+        paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 50]
+        if paragraphs:
+            return paragraphs
+    
+    # Si no hay dobles saltos, dividir por salto simple y agrupar
+    lines = text.split('\n')
+    chunks = []
+    current_chunk = []
+    current_length = 0
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        current_chunk.append(line)
+        current_length += len(line)
+        
+        if current_length >= chunk_size:
+            chunks.append(' '.join(current_chunk))
+            current_chunk = []
+            current_length = 0
+    
+    if current_chunk:
+        chunks.append(' '.join(current_chunk))
+    
+    return chunks
+
 def search(query_keywords, letters):
     """Busca párrafos relevantes usando keywords en inglés"""
     
@@ -336,24 +367,24 @@ def search(query_keywords, letters):
             continue
             
         text = data.get('text', '')
-        paragraphs = text.split('\n\n')
+        chunks = chunk_text(text)
         
-        for para in paragraphs:
-            if len(para) < 80:
+        for chunk in chunks:
+            if len(chunk) < 80:
                 continue
                 
-            para_lower = para.lower()
+            chunk_lower = chunk.lower()
             score = 0
             
             for kw in keywords:
-                count = para_lower.count(kw)
+                count = chunk_lower.count(kw)
                 if count > 0:
                     score += count * 2
             
             if score > 0 or target_year:
                 results.append({
                     'year': year, 
-                    'text': para[:2000], 
+                    'text': chunk[:2000], 
                     'score': score if score > 0 else 0.1
                 })
     

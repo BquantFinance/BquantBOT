@@ -1,5 +1,5 @@
 import streamlit as st
-from google import genai
+from groq import Groq
 import json
 import re
 
@@ -8,16 +8,7 @@ import re
 # ============================================
 st.set_page_config(page_title="BQuant", page_icon="⚡", layout="centered")
 
-GEMINI_API_KEY = "AIzaSyBuxu0jsV6t0hVBVmksD6LBJhKPu8VjPOY"
-
-# Modelos a probar en orden (free tier)
-MODELS_TO_TRY = [
-    "gemini-2.0-flash-exp",
-    "gemini-1.5-flash-8b", 
-    "gemini-1.5-flash-latest",
-    "gemini-1.0-pro",
-    "gemini-pro",
-]
+GROQ_API_KEY = "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"
 
 # ============================================
 # CSS
@@ -67,12 +58,16 @@ def load_letters():
     except:
         return None
 
+@st.cache_resource
+def get_client():
+    return Groq(api_key=GROQ_API_KEY)
+
 # ============================================
 # SEARCH
 # ============================================
 def search(query, letters):
     q = query.lower()
-    stopwords = {'que','el','la','los','de','en','a','por','para','con','sobre','es','buffett','warren','carta','dice','qué','cómo'}
+    stopwords = {'que','el','la','los','de','en','a','por','para','con','sobre','es','buffett','warren','carta','dice','qué','cómo','hola'}
     keywords = [w for w in re.findall(r'\w+', q) if w not in stopwords and len(w) > 2]
     
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
@@ -98,50 +93,50 @@ def search(query, letters):
     return sorted(results, key=lambda x: -x['score'])[:5]
 
 # ============================================
-# GENERATE - intenta varios modelos
+# GENERATE
 # ============================================
-def generate(query, letters):
+def generate(query, letters, client):
     chunks = search(query, letters)
     context = "\n\n".join([f"[{c['year']}]: {c['text']}" for c in chunks])
     sources = list(dict.fromkeys([c['year'] for c in chunks]))
     
-    prompt = f"""Eres un asistente experto en las cartas anuales de Warren Buffett (1977-2024).
-
-CONTEXTO:
-{context}
-
-INSTRUCCIONES:
-- Responde basándote en el contexto
-- Cita el año cuando menciones algo específico
+    messages = [
+        {
+            "role": "system",
+            "content": """Eres un asistente experto en las cartas anuales de Warren Buffett (1977-2024).
+            
+REGLAS:
+- Responde basándote SOLO en el contexto proporcionado
+- Cita el año cuando menciones algo específico: "En [año], Buffett..."
 - Responde en español
 - Sé conciso (150-200 palabras)
+- No inventes información que no esté en el contexto"""
+        },
+        {
+            "role": "user", 
+            "content": f"""CONTEXTO DE LAS CARTAS:
+{context}
 
-PREGUNTA: {query}
-
-RESPUESTA:"""
+PREGUNTA: {query}"""
+        }
+    ]
     
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    errors = []
-    
-    # Intentar cada modelo hasta que uno funcione
-    for model_name in MODELS_TO_TRY:
-        try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=prompt
-            )
-            return response.text, sources
-        except Exception as e:
-            errors.append(f"{model_name}: {str(e)[:100]}")
-            continue
-    
-    # Si todos fallan, mostrar errores
-    return f"No se pudo conectar con ningún modelo.\n\nErrores:\n" + "\n".join(errors), []
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=500,
+        )
+        return response.choices[0].message.content, sources
+    except Exception as e:
+        return f"Error: {str(e)}", []
 
 # ============================================
 # APP
 # ============================================
 letters = load_letters()
+client = get_client()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -182,8 +177,8 @@ if letters:
             st.write(prompt)
         
         with st.chat_message("assistant", avatar="⚡"):
-            with st.spinner("Buscando en las cartas..."):
-                response, sources = generate(prompt, letters)
+            with st.spinner("Pensando..."):
+                response, sources = generate(prompt, letters, client)
             st.write(response)
             if sources:
                 st.markdown(f'<div class="source-tag">📚 {", ".join(sources)}</div>', unsafe_allow_html=True)

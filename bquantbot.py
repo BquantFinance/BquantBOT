@@ -21,10 +21,9 @@ GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
 # ============================================
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
     
     * { font-family: 'Space Grotesk', sans-serif; }
-    code, .mono { font-family: 'JetBrains Mono', monospace; }
     
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
@@ -35,37 +34,37 @@ st.markdown("""
         background: #050508;
         background-image: 
             radial-gradient(ellipse at top left, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
-            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
-            radial-gradient(ellipse at center, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
-        min-height: 100vh;
+            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.1) 0%, transparent 50%);
     }
     
     .block-container {
-        padding-bottom: 120px !important;
+        padding-top: 1rem !important;
+        padding-bottom: 100px !important;
+        max-width: 900px !important;
     }
     
+    /* Header */
     .logo-container {
         text-align: center;
-        padding: 2rem 0 1.5rem 0;
+        padding: 1.5rem 0;
     }
     
     .logo {
-        font-size: 3rem;
+        font-size: 2.8rem;
         font-weight: 700;
         letter-spacing: -2px;
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
-        margin-bottom: 0.5rem;
     }
     
     .tagline {
         color: rgba(255, 255, 255, 0.5);
-        font-size: 1rem;
-        font-weight: 400;
+        font-size: 0.9rem;
         letter-spacing: 2px;
         text-transform: uppercase;
+        margin-top: 0.25rem;
     }
     
     .status-container {
@@ -73,7 +72,6 @@ st.markdown("""
         justify-content: center;
         gap: 0.75rem;
         margin-top: 1rem;
-        flex-wrap: wrap;
     }
     
     .status-pill {
@@ -110,124 +108,123 @@ st.markdown("""
     }
     
     @keyframes pulse {
-        0%, 100% { opacity: 1; transform: scale(1); }
-        50% { opacity: 0.7; transform: scale(0.95); }
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
     }
     
+    /* Stats */
     .stats-grid {
         display: grid;
         grid-template-columns: repeat(4, 1fr);
-        gap: 1rem;
-        margin: 2rem auto;
-        max-width: 800px;
+        gap: 0.75rem;
+        margin: 1.5rem 0;
     }
     
     .stat-card {
         background: rgba(255, 255, 255, 0.02);
         border: 1px solid rgba(255, 255, 255, 0.06);
-        border-radius: 16px;
-        padding: 1.25rem;
+        border-radius: 12px;
+        padding: 1rem;
         text-align: center;
-        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.3s ease;
     }
     
     .stat-card:hover {
         background: rgba(255, 255, 255, 0.04);
-        border-color: rgba(99, 102, 241, 0.2);
-        transform: translateY(-4px);
+        transform: translateY(-2px);
     }
     
-    .stat-icon { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    .stat-icon { font-size: 1.25rem; margin-bottom: 0.25rem; }
     
     .stat-value {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #fff 0%, rgba(255,255,255,0.7) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: white;
     }
     
     .stat-label {
         color: rgba(255, 255, 255, 0.4);
-        font-size: 0.75rem;
-        margin-top: 0.25rem;
+        font-size: 0.7rem;
         text-transform: uppercase;
         letter-spacing: 1px;
     }
     
+    /* Suggestions */
     .suggestions-title {
         text-align: center;
         color: rgba(255, 255, 255, 0.3);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         text-transform: uppercase;
         letter-spacing: 2px;
-        margin-bottom: 1rem;
+        margin: 1.5rem 0 1rem 0;
     }
     
-    .message-row {
-        display: flex;
-        margin: 1.25rem 0;
-        max-width: 850px;
-        margin-left: auto;
-        margin-right: auto;
-        animation: fadeIn 0.3s ease-out;
+    /* Buttons */
+    .stButton > button {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: rgba(255, 255, 255, 0.8) !important;
+        border-radius: 12px !important;
+        padding: 0.75rem 1rem !important;
+        font-size: 0.85rem !important;
+        transition: all 0.3s ease !important;
     }
     
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+    .stButton > button:hover {
+        background: rgba(99, 102, 241, 0.15) !important;
+        border-color: rgba(99, 102, 241, 0.4) !important;
+        color: white !important;
     }
     
-    .message-row.user { justify-content: flex-end; }
-    .message-row.assistant { justify-content: flex-start; }
-    
-    .message-bubble {
-        max-width: 80%;
-        padding: 1.1rem 1.4rem;
-        border-radius: 20px;
-        line-height: 1.7;
-        font-size: 0.95rem;
+    /* Chat messages */
+    .stChatMessage {
+        background: rgba(255, 255, 255, 0.02) !important;
+        border: 1px solid rgba(255, 255, 255, 0.05) !important;
+        border-radius: 16px !important;
+        padding: 1rem !important;
+        margin-bottom: 0.75rem !important;
     }
     
-    .message-bubble.user {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-        color: white;
-        border-bottom-right-radius: 6px;
-        box-shadow: 0 4px 25px rgba(99, 102, 241, 0.35);
+    .stChatMessage [data-testid="chatAvatarIcon-user"] {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
     }
     
-    .message-bubble.assistant {
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.9);
-        border-bottom-left-radius: 6px;
-        backdrop-filter: blur(10px);
+    .stChatMessage [data-testid="chatAvatarIcon-assistant"] {
+        background: rgba(99, 102, 241, 0.2) !important;
     }
     
-    .avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.1rem;
-        margin: 0 0.85rem;
-        flex-shrink: 0;
+    .stChatMessage p {
+        color: rgba(255, 255, 255, 0.9) !important;
     }
     
-    .avatar.user {
-        background: linear-gradient(135deg, #6366f1, #8b5cf6);
-        order: 1;
-        box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+    /* Chat input */
+    .stChatInput > div {
+        background: rgba(255, 255, 255, 0.03) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 16px !important;
+        padding: 0.25rem !important;
     }
     
-    .avatar.assistant {
-        background: rgba(255, 255, 255, 0.08);
-        border: 1px solid rgba(255, 255, 255, 0.12);
+    .stChatInput > div:focus-within {
+        border-color: rgba(99, 102, 241, 0.5) !important;
+        box-shadow: 0 0 20px rgba(99, 102, 241, 0.15) !important;
     }
     
+    .stChatInput input {
+        color: white !important;
+        font-size: 0.95rem !important;
+    }
+    
+    .stChatInput input::placeholder {
+        color: rgba(255, 255, 255, 0.3) !important;
+    }
+    
+    .stChatInput button {
+        background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+        border-radius: 12px !important;
+    }
+    
+    /* Source tag */
     .source-tag {
         display: inline-block;
         background: rgba(99, 102, 241, 0.15);
@@ -235,116 +232,16 @@ st.markdown("""
         color: #a5b4fc;
         padding: 4px 10px;
         border-radius: 8px;
-        font-size: 0.72rem;
-        margin-top: 0.75rem;
-    }
-    
-    .stButton > button {
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: rgba(255, 255, 255, 0.8);
-        border-radius: 14px;
-        padding: 0.8rem 1.2rem;
-        font-family: 'Space Grotesk', sans-serif;
-        font-size: 0.9rem;
-        font-weight: 500;
-        transition: all 0.3s ease;
-        width: 100%;
-    }
-    
-    .stButton > button:hover {
-        background: rgba(99, 102, 241, 0.15);
-        border-color: rgba(99, 102, 241, 0.4);
-        color: white;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.2);
-    }
-    
-    /* ========== INPUT MEJORADO ========== */
-    
-    .stChatInput {
-        position: fixed !important;
-        bottom: 0 !important;
-        left: 0 !important;
-        right: 0 !important;
-        padding: 1.5rem 2rem 2rem 2rem !important;
-        background: linear-gradient(to top, 
-            rgba(5, 5, 8, 1) 0%, 
-            rgba(5, 5, 8, 0.95) 50%,
-            rgba(5, 5, 8, 0) 100%) !important;
-        z-index: 1000;
-    }
-    
-    .stChatInput > div {
-        max-width: 800px !important;
-        margin: 0 auto !important;
-        background: rgba(255, 255, 255, 0.03) !important;
-        border: 1px solid rgba(255, 255, 255, 0.1) !important;
-        border-radius: 20px !important;
-        backdrop-filter: blur(20px) !important;
-        box-shadow: 
-            0 4px 30px rgba(0, 0, 0, 0.3),
-            0 0 0 1px rgba(255, 255, 255, 0.05) inset,
-            0 0 60px rgba(99, 102, 241, 0.1) !important;
-        transition: all 0.3s ease !important;
-        padding: 4px !important;
-    }
-    
-    .stChatInput > div:focus-within {
-        border-color: rgba(99, 102, 241, 0.4) !important;
-        box-shadow: 
-            0 4px 30px rgba(0, 0, 0, 0.3),
-            0 0 0 1px rgba(99, 102, 241, 0.2) inset,
-            0 0 80px rgba(99, 102, 241, 0.15) !important;
-    }
-    
-    .stChatInput input, .stChatInput textarea {
-        color: white !important;
-        font-family: 'Space Grotesk', sans-serif !important;
-        font-size: 1rem !important;
-        padding: 1rem 1.25rem !important;
-        line-height: 1.5 !important;
-        background: transparent !important;
-    }
-    
-    .stChatInput input::placeholder, .stChatInput textarea::placeholder {
-        color: rgba(255, 255, 255, 0.35) !important;
-        font-size: 1rem !important;
-    }
-    
-    .stChatInput button {
-        background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
-        border: none !important;
-        border-radius: 14px !important;
-        margin: 6px !important;
-        padding: 10px 16px !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .stChatInput button:hover {
-        transform: scale(1.05) !important;
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4) !important;
-    }
-    
-    .stChatInput button svg {
-        width: 20px !important;
-        height: 20px !important;
-    }
-    
-    /* Input helper text */
-    .input-helper {
-        text-align: center;
-        color: rgba(255, 255, 255, 0.25);
-        font-size: 0.7rem;
+        font-size: 0.75rem;
         margin-top: 0.5rem;
-        letter-spacing: 0.5px;
     }
     
+    /* Footer */
     .footer {
         text-align: center;
-        padding: 1.5rem 0 8rem 0;
+        padding: 2rem 0;
         color: rgba(255, 255, 255, 0.25);
-        font-size: 0.75rem;
+        font-size: 0.7rem;
     }
     
     .footer a {
@@ -352,36 +249,9 @@ st.markdown("""
         text-decoration: none;
     }
     
-    /* Typing indicator */
-    .typing-indicator {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        padding: 0.5rem 0;
-    }
-    
-    .typing-dot {
-        width: 8px;
-        height: 8px;
-        background: #6366f1;
-        border-radius: 50%;
-        animation: typingBounce 1.4s ease-in-out infinite;
-    }
-    
-    .typing-dot:nth-child(2) { animation-delay: 0.2s; }
-    .typing-dot:nth-child(3) { animation-delay: 0.4s; }
-    
-    @keyframes typingBounce {
-        0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
-        40% { transform: scale(1.2); opacity: 1; }
-    }
-    
     @media (max-width: 768px) {
         .stats-grid { grid-template-columns: repeat(2, 1fr); }
-        .logo { font-size: 2.5rem; }
-        .message-bubble { max-width: 90%; }
-        .stChatInput { padding: 1rem !important; }
-        .stChatInput > div { border-radius: 16px !important; }
+        .logo { font-size: 2rem; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -428,8 +298,6 @@ def search_letters(query: str, letters: dict, max_chunks: int = 5, chunk_size: i
             continue
             
         text = letter_data.get('text', '')
-        text_lower = text.lower()
-        
         paragraphs = [p.strip() for p in text.split('\n\n') if len(p.strip()) > 100]
         
         for para in paragraphs:
@@ -527,7 +395,7 @@ if "messages" not in st.session_state:
 # ============================================
 st.markdown("""
 <div class="logo-container">
-    <div class="logo">⚡ BQuantChatBot</div>
+    <div class="logo">⚡ BQuant</div>
     <div class="tagline">Berkshire Letters AI</div>
     <div class="status-container">
         <div class="status-pill">
@@ -589,50 +457,36 @@ if len(st.session_state.messages) == 0:
                 st.rerun()
 
 # ============================================
-# MENSAJES
+# MENSAJES (usando st.chat_message nativo)
 # ============================================
 for msg in st.session_state.messages:
-    role_class = msg["role"]
-    avatar = "👤" if role_class == "user" else "⚡"
-    
-    content = msg["content"]
-    sources_html = ""
-    if role_class == "assistant" and "sources" in msg and msg["sources"]:
-        sources_html = f'<div class="source-tag">📚 Cartas: {", ".join(msg["sources"])}</div>'
-    
-    st.markdown(f"""
-    <div class="message-row {role_class}">
-        <div class="avatar {role_class}">{avatar}</div>
-        <div class="message-bubble {role_class}">
-            {content}
-            {sources_html}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "⚡"):
+        st.write(msg["content"])
+        if msg["role"] == "assistant" and "sources" in msg and msg["sources"]:
+            st.markdown(f'<div class="source-tag">📚 Cartas: {", ".join(msg["sources"])}</div>', unsafe_allow_html=True)
 
 # ============================================
 # INPUT
 # ============================================
 if letters and model:
-    if prompt := st.chat_input("Pregunta lo que quieras sobre las cartas de Warren Buffett..."):
+    if prompt := st.chat_input("Pregunta sobre las cartas de Warren Buffett..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        st.markdown(f"""
-        <div class="message-row user">
-            <div class="avatar user">👤</div>
-            <div class="message-bubble user">{prompt}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.chat_message("user", avatar="👤"):
+            st.write(prompt)
         
-        with st.spinner(""):
-            response, sources = get_response(prompt, letters, model, st.session_state.messages)
+        with st.chat_message("assistant", avatar="⚡"):
+            with st.spinner("Buscando en las cartas..."):
+                response, sources = get_response(prompt, letters, model, st.session_state.messages)
+            st.write(response)
+            if sources:
+                st.markdown(f'<div class="source-tag">📚 Cartas: {", ".join(sources)}</div>', unsafe_allow_html=True)
         
         st.session_state.messages.append({
             "role": "assistant", 
             "content": response,
             "sources": sources
         })
-        st.rerun()
 elif not letters:
     st.error("⚠️ No se encontró `berkshire_letters.json`")
 else:
@@ -643,7 +497,7 @@ else:
 # ============================================
 st.markdown("""
 <div class="footer">
-    <p>Datos extraídos de las cartas oficiales de Berkshire Hathaway</p>
+    <p>Datos de las cartas oficiales de Berkshire Hathaway · No es asesoramiento financiero</p>
     <p style="margin-top: 0.5rem;">
         © 2026 <a href="https://bquantfinance.com" target="_blank">BQuant Finance</a> · 
         <a href="https://twitter.com/Gsnchez" target="_blank">@Gsnchez</a>

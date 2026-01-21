@@ -8,7 +8,7 @@ import re
 # ============================================
 st.set_page_config(page_title="BQuant", page_icon="⚡", layout="centered")
 
-GROQ_API_KEY = "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"
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 
 # ============================================
 # CSS PREMIUM

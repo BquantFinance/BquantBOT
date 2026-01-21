@@ -457,7 +457,7 @@ if "pending_query" not in st.session_state:
 # Header
 st.markdown("""
 <div class="header">
-    <div class="logo">⚡ BQuant</div>
+    <div class="logo">⚡ BQuantChatBot</div>
     <div class="tagline">Berkshire Letters AI</div>
     <div class="badges">
         <span class="badge badge-online"><span class="pulse-dot"></span> Online</span>

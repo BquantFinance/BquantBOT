@@ -25,24 +25,23 @@ st.markdown("""
         background: #050508;
         background-image: 
             radial-gradient(ellipse at top left, rgba(99, 102, 241, 0.18) 0%, transparent 50%),
-            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.12) 0%, transparent 50%),
-            radial-gradient(ellipse at center, rgba(6, 182, 212, 0.06) 0%, transparent 70%);
+            radial-gradient(ellipse at bottom right, rgba(139, 92, 246, 0.12) 0%, transparent 50%);
         min-height: 100vh;
     }
     
     .block-container {
-        padding: 2rem 1.5rem !important;
+        padding: 1.5rem 1.5rem 1rem 1.5rem !important;
         max-width: 850px !important;
     }
     
     /* Header */
     .header {
         text-align: center;
-        padding: 1.5rem 0 2rem 0;
+        padding: 1rem 0 1.5rem 0;
     }
     
     .logo {
-        font-size: 3rem;
+        font-size: 2.8rem;
         font-weight: 700;
         letter-spacing: -2px;
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #06b6d4 100%);
@@ -53,26 +52,26 @@ st.markdown("""
     
     .tagline {
         color: rgba(255, 255, 255, 0.5);
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         letter-spacing: 3px;
         text-transform: uppercase;
-        margin-top: 0.5rem;
+        margin-top: 0.4rem;
     }
     
     .badges {
         display: flex;
         justify-content: center;
-        gap: 0.6rem;
-        margin-top: 1rem;
+        gap: 0.5rem;
+        margin-top: 0.8rem;
     }
     
     .badge {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        padding: 6px 16px;
+        gap: 7px;
+        padding: 5px 14px;
         border-radius: 50px;
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 500;
     }
     
@@ -89,11 +88,11 @@ st.markdown("""
     }
     
     .pulse-dot {
-        width: 8px;
-        height: 8px;
+        width: 7px;
+        height: 7px;
         background: #22c55e;
         border-radius: 50%;
-        box-shadow: 0 0 12px #22c55e;
+        box-shadow: 0 0 10px #22c55e;
         animation: pulse 2s ease-in-out infinite;
     }
     
@@ -105,19 +104,19 @@ st.markdown("""
     /* Welcome */
     .welcome {
         text-align: center;
-        padding: 2.5rem 0;
+        padding: 1.5rem 0;
     }
     
     .welcome-title {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: 600;
         color: white;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.4rem;
     }
     
     .welcome-sub {
         color: rgba(255, 255, 255, 0.45);
-        font-size: 1rem;
+        font-size: 0.95rem;
     }
     
     /* Suggestion buttons */
@@ -126,8 +125,8 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
         color: rgba(255, 255, 255, 0.75) !important;
         border-radius: 14px !important;
-        padding: 0.8rem 1.3rem !important;
-        font-size: 0.88rem !important;
+        padding: 0.75rem 1.2rem !important;
+        font-size: 0.85rem !important;
         font-weight: 400 !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
@@ -136,63 +135,69 @@ st.markdown("""
         background: rgba(99, 102, 241, 0.15) !important;
         border-color: rgba(99, 102, 241, 0.4) !important;
         color: white !important;
-        transform: translateY(-3px) !important;
-        box-shadow: 0 8px 25px rgba(99, 102, 241, 0.2) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.2) !important;
     }
     
     /* Chat messages */
     .stChatMessage {
         background: rgba(255, 255, 255, 0.025) !important;
         border: 1px solid rgba(255, 255, 255, 0.07) !important;
-        border-radius: 18px !important;
-        padding: 1.1rem 1.3rem !important;
-        margin-bottom: 1rem !important;
-        backdrop-filter: blur(10px);
+        border-radius: 16px !important;
+        padding: 1rem 1.2rem !important;
+        margin-bottom: 0.75rem !important;
     }
     
     [data-testid="stChatMessageContent"] {
         color: rgba(255, 255, 255, 0.92) !important;
-        font-size: 0.95rem !important;
-        line-height: 1.7 !important;
+        font-size: 0.92rem !important;
+        line-height: 1.65 !important;
     }
     
     [data-testid="stChatMessageContent"] p {
         color: rgba(255, 255, 255, 0.92) !important;
     }
     
-    /* Chat input */
+    /* Chat input - MÁS GRANDE Y ARRIBA */
+    [data-testid="stChatInput"] {
+        padding-top: 1rem !important;
+    }
+    
     [data-testid="stChatInput"] > div {
         background: rgba(12, 12, 20, 0.95) !important;
-        border: 1px solid rgba(99, 102, 241, 0.25) !important;
-        border-radius: 18px !important;
+        border: 1px solid rgba(99, 102, 241, 0.3) !important;
+        border-radius: 20px !important;
+        padding: 0.3rem !important;
         box-shadow: 
-            0 0 50px rgba(99, 102, 241, 0.1),
-            0 8px 30px rgba(0, 0, 0, 0.25) !important;
+            0 0 60px rgba(99, 102, 241, 0.12),
+            0 8px 30px rgba(0, 0, 0, 0.3) !important;
         backdrop-filter: blur(20px) !important;
         transition: all 0.3s ease !important;
     }
     
     [data-testid="stChatInput"] > div:focus-within {
-        border-color: rgba(99, 102, 241, 0.5) !important;
+        border-color: rgba(99, 102, 241, 0.6) !important;
         box-shadow: 
-            0 0 70px rgba(99, 102, 241, 0.15),
-            0 8px 40px rgba(0, 0, 0, 0.3) !important;
+            0 0 80px rgba(99, 102, 241, 0.18),
+            0 8px 40px rgba(0, 0, 0, 0.35) !important;
     }
     
     [data-testid="stChatInput"] input {
         color: white !important;
-        font-size: 1rem !important;
-        padding: 0.2rem 0 !important;
+        font-size: 1.05rem !important;
+        padding: 0.9rem 1rem !important;
     }
     
     [data-testid="stChatInput"] input::placeholder {
-        color: rgba(255, 255, 255, 0.35) !important;
+        color: rgba(255, 255, 255, 0.4) !important;
     }
     
     [data-testid="stChatInput"] button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%) !important;
         border: none !important;
         border-radius: 14px !important;
+        padding: 0.7rem 0.9rem !important;
+        margin: 0.35rem !important;
         transition: all 0.3s ease !important;
     }
     
@@ -207,40 +212,34 @@ st.markdown("""
         background: rgba(99, 102, 241, 0.12);
         border: 1px solid rgba(99, 102, 241, 0.3);
         color: #a5b4fc;
-        padding: 6px 14px;
-        border-radius: 10px;
-        font-size: 0.78rem;
-        margin-top: 1rem;
+        padding: 5px 12px;
+        border-radius: 8px;
+        font-size: 0.75rem;
+        margin-top: 0.75rem;
         font-weight: 500;
     }
     
     /* Footer */
     .footer {
         text-align: center;
-        padding: 2rem 0 1rem 0;
+        padding: 1rem 0;
         color: rgba(255, 255, 255, 0.25);
-        font-size: 0.75rem;
+        font-size: 0.72rem;
     }
     
     .footer a {
         color: rgba(99, 102, 241, 0.6);
         text-decoration: none;
-        transition: color 0.2s;
     }
     
     .footer a:hover {
         color: rgba(99, 102, 241, 1);
     }
     
-    /* Spinner */
-    .stSpinner > div > div {
-        border-top-color: #6366f1 !important;
-    }
-    
     /* Responsive */
     @media (max-width: 768px) {
-        .logo { font-size: 2.3rem; }
-        .welcome-title { font-size: 1.3rem; }
+        .logo { font-size: 2.2rem; }
+        .welcome-title { font-size: 1.25rem; }
         .block-container { padding: 1rem !important; }
     }
 </style>
@@ -340,6 +339,8 @@ client = get_client()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+if "pending_query" not in st.session_state:
+    st.session_state.pending_query = None
 
 # Header
 st.markdown("""
@@ -353,7 +354,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Welcome
+# Welcome + Suggestions
 if not st.session_state.messages:
     st.markdown("""
     <div class="welcome">
@@ -367,8 +368,21 @@ if not st.session_state.messages:
     for i, s in enumerate(suggestions):
         with cols[i % 3]:
             if st.button(s, key=f"sug_{i}", use_container_width=True):
-                st.session_state.messages.append({"role": "user", "content": f"¿Qué dice Buffett sobre {s.lower()}?"})
+                st.session_state.pending_query = f"¿Qué dice Buffett sobre {s.lower()}?"
                 st.rerun()
+
+# Procesar query pendiente (de sugerencias)
+if st.session_state.pending_query and letters:
+    query = st.session_state.pending_query
+    st.session_state.pending_query = None
+    
+    st.session_state.messages.append({"role": "user", "content": query})
+    
+    with st.spinner("Buscando en las cartas..."):
+        response, sources = generate(query, letters, client)
+    
+    st.session_state.messages.append({"role": "assistant", "content": response, "sources": sources})
+    st.rerun()
 
 # Messages
 for msg in st.session_state.messages:

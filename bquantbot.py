@@ -1,6 +1,9 @@
 """
-BQuant ChatBot - RAG con Embeddings Reales
-Búsqueda semántica sobre las cartas de Warren Buffett (1977-2024)
+BQuant ChatBot - RAG Mejorado
+- Traducción de query a inglés para mejor búsqueda
+- Más chunks recuperados (top_k=8)
+- Query expansion con sinónimos
+- Mejor prompt de síntesis
 """
 
 import streamlit as st
@@ -38,7 +41,6 @@ st.markdown("""
     * { font-family: 'DM Sans', -apple-system, sans-serif; }
     #MainMenu, footer, header, .stDeployButton { display: none !important; }
     
-    /* FONDO UNIFORME EN TODO */
     html, body, .stApp, 
     [data-testid="stAppViewContainer"], 
     [data-testid="stHeader"],
@@ -56,25 +58,17 @@ st.markdown("""
         max-width: 780px !important; 
     }
     
-    /* BARRA DE INPUT - FIJA ABAJO */
     [data-testid="stBottom"] {
         background: var(--bg) !important;
-        background-color: var(--bg) !important;
         border-top: 1px solid var(--border) !important;
         padding: 1rem 0 1.5rem 0 !important;
     }
     
     [data-testid="stBottomBlockContainer"] {
         background: var(--bg) !important;
-        background-color: var(--bg) !important;
         max-width: 780px !important;
         margin: 0 auto !important;
         padding: 0 1.5rem !important;
-    }
-    
-    /* INPUT MÁS GRANDE */
-    [data-testid="stChatInput"] {
-        max-width: 100% !important;
     }
     
     [data-testid="stChatInput"] > div {
@@ -97,9 +91,7 @@ st.markdown("""
         background: transparent !important;
     }
     
-    [data-testid="stChatInput"] input::placeholder { 
-        color: var(--muted) !important; 
-    }
+    [data-testid="stChatInput"] input::placeholder { color: var(--muted) !important; }
     
     [data-testid="stChatInput"] button {
         background: var(--accent) !important;
@@ -110,7 +102,6 @@ st.markdown("""
         margin: 6px 8px 6px 0 !important;
     }
     
-    /* HEADER */
     .header {
         text-align: center;
         padding: 1.5rem 0 2rem;
@@ -149,7 +140,6 @@ st.markdown("""
     }
     @keyframes pulse { 50% { opacity: 0.4; } }
     
-    /* WELCOME */
     .welcome {
         text-align: center;
         padding: 2.5rem 1rem 2rem;
@@ -167,7 +157,6 @@ st.markdown("""
         font-size: 0.95rem;
     }
     
-    /* PILLS */
     .stButton > button {
         background: transparent !important;
         border: 1px solid var(--border) !important;
@@ -183,7 +172,6 @@ st.markdown("""
         background: rgba(212,168,83,0.08) !important;
     }
     
-    /* CHAT */
     .stChatMessage {
         background: transparent !important;
         border: none !important;
@@ -198,7 +186,6 @@ st.markdown("""
         line-height: 1.7 !important;
     }
     
-    /* SOURCES */
     .sources {
         display: flex;
         flex-wrap: wrap;
@@ -218,7 +205,6 @@ st.markdown("""
     }
     .src b { color: var(--accent); }
     
-    /* FOOTER */
     .footer {
         text-align: center;
         padding: 1.5rem 0;
@@ -261,28 +247,95 @@ def get_client():
 
 
 # ============================================
-# SEMANTIC SEARCH
+# QUERY ENHANCEMENT (NUEVO)
 # ============================================
-def search(query: str, index, chunks: list, model, top_k: int = 5) -> list[dict]:
-    """Búsqueda semántica con FAISS"""
+def enhance_query(query: str, client) -> str:
+    """
+    Traduce y expande la query a inglés con términos relevantes
+    para mejorar la búsqueda semántica en las cartas (que están en inglés)
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """You are a search query optimizer for Warren Buffett's annual letters to shareholders.
+
+Your task: Convert the user's question into optimal English search terms.
+
+Rules:
+1. Translate to English if not already
+2. Extract key concepts and add synonyms Buffett would use
+3. Return ONLY the search terms, no explanations
+4. Keep it concise (max 10-15 words)
+
+Examples:
+- "¿Qué opina de la diversificación?" → "diversification concentrated portfolio focus circle of competence"
+- "¿Cómo valora una empresa?" → "valuation intrinsic value earnings owner earnings cash flow"
+- "¿Qué son los moats?" → "moat competitive advantage durable economic franchise"
+- "Crisis de 2008" → "2008 financial crisis panic fear recession"
+- "¿Por qué compró See's Candies?" → "See's Candies acquisition purchase brand pricing power"
+- "¿Qué piensa del oro?" → "gold investment store of value unproductive asset"
+- "Recompra de acciones" → "share repurchase buyback intrinsic value per share"
+- "¿Qué dijo sobre los bancos?" → "banks banking financial institutions leverage"
+- "Filosofía de inversión" → "investment philosophy value investing long-term patience margin of safety"
+"""
+                },
+                {"role": "user", "content": query}
+            ],
+            temperature=0,
+            max_tokens=50
+        )
+        enhanced = response.choices[0].message.content.strip()
+        return enhanced if enhanced else query
+    except:
+        return query
+
+
+# ============================================
+# SEMANTIC SEARCH (MEJORADO)
+# ============================================
+def search(query: str, index, chunks: list, model, client, top_k: int = 8) -> list[dict]:
+    """
+    Búsqueda semántica mejorada:
+    1. Expande query a inglés
+    2. Busca más chunks
+    3. Filtra por año si se menciona
+    """
     
+    # Extraer año si se menciona
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
     year_filter = year_match.group(1) if year_match else None
     
-    q_emb = model.encode([query], normalize_embeddings=True, convert_to_numpy=True)
+    # Traducir/expandir query a inglés
+    enhanced_query = enhance_query(query, client)
     
-    k = top_k * 4 if year_filter else top_k
+    # Embedding de la query mejorada
+    q_emb = model.encode([enhanced_query], normalize_embeddings=True, convert_to_numpy=True)
+    
+    # Buscar más resultados si hay filtro de año
+    k = top_k * 3 if year_filter else top_k
     scores, indices = index.search(q_emb.astype('float32'), min(k, len(chunks)))
     
     results = []
+    seen_years = set()  # Para diversificar años en resultados
+    
     for score, idx in zip(scores[0], indices[0]):
         if idx < 0:
             continue
         chunk = chunks[idx].copy()
         chunk['score'] = float(score)
         
+        # Filtrar por año si se especificó
         if year_filter and chunk['year'] != year_filter:
             continue
+        
+        # Si no hay filtro de año, diversificar (max 2 chunks por año)
+        if not year_filter:
+            year_count = sum(1 for r in results if r['year'] == chunk['year'])
+            if year_count >= 2:
+                continue
         
         results.append(chunk)
         if len(results) >= top_k:
@@ -292,30 +345,36 @@ def search(query: str, index, chunks: list, model, top_k: int = 5) -> list[dict]
 
 
 # ============================================
-# GENERATE RESPONSE
+# GENERATE RESPONSE (MEJORADO)
 # ============================================
 def generate(query: str, results: list[dict], client) -> tuple[str, list]:
-    """Genera respuesta con Groq"""
+    """Genera respuesta con mejor síntesis"""
     
     if not results:
         system = """Eres el asistente de BQuant sobre las cartas de Warren Buffett (1977-2024).
 Responde amigablemente y sugiere temas: inversión, adquisiciones, crisis, seguros, o años específicos."""
         messages = [{"role": "system", "content": system}, {"role": "user", "content": query}]
     else:
-        context = "\n\n---\n\n".join([f"[{r['year']}]\n{r['text']}" for r in results])
+        # Ordenar por año para mejor contexto cronológico
+        sorted_results = sorted(results, key=lambda x: x['year'])
+        context = "\n\n---\n\n".join([f"[CARTA {r['year']}]\n{r['text']}" for r in sorted_results])
         
-        system = """Eres experto en las cartas de Warren Buffett (1977-2024).
+        system = """Eres un experto en las cartas anuales de Warren Buffett a los accionistas de Berkshire Hathaway (1977-2024).
 
-REGLAS:
-- Responde SOLO con información del contexto
-- Cita el año: "En [año], Buffett..."
-- Sé directo y específico
-- Si no está en el contexto, dilo
-- Español, máximo 250 palabras"""
+INSTRUCCIONES:
+1. Sintetiza la información de TODAS las cartas proporcionadas
+2. Cita el año de cada afirmación: "En [año], Buffett explicó que..."
+3. Si hay evolución en su pensamiento a lo largo de los años, menciónalo
+4. Sé directo y específico - usa citas o parafrasea sus palabras exactas
+5. Si la información no está en el contexto, dilo claramente
+6. Responde en español
+7. Máximo 300 palabras
+
+IMPORTANTE: Buffett tiene opiniones fuertes y memorables. Captura su tono directo, no lo suavices."""
 
         messages = [
             {"role": "system", "content": system},
-            {"role": "user", "content": f"CONTEXTO:\n{context}\n\n---\nPREGUNTA: {query}"}
+            {"role": "user", "content": f"CONTEXTO DE LAS CARTAS:\n{context}\n\n---\n\nPREGUNTA: {query}"}
         ]
     
     try:
@@ -323,7 +382,7 @@ REGLAS:
             model="llama-3.3-70b-versatile",
             messages=messages,
             temperature=0.3,
-            max_tokens=600
+            max_tokens=700
         )
         return resp.choices[0].message.content, results
     except Exception as e:
@@ -336,7 +395,9 @@ REGLAS:
 def show_sources(results: list):
     if not results:
         return
-    pills = ''.join([f'<span class="src"><b>{r["year"]}</b></span>' for r in results[:4]])
+    # Ordenar años y eliminar duplicados
+    years = sorted(set(r["year"] for r in results))
+    pills = ''.join([f'<span class="src"><b>{y}</b></span>' for y in years])
     st.markdown(f'<div class="sources">{pills}</div>', unsafe_allow_html=True)
 
 
@@ -402,7 +463,7 @@ def main():
         st.session_state.pending = None
         st.session_state.messages.append({"role": "user", "content": q})
         
-        results = search(q, index, chunks, model)
+        results = search(q, index, chunks, model, client)
         response, used = generate(q, results, client)
         st.session_state.messages.append({"role": "assistant", "content": response, "sources": used})
         st.rerun()
@@ -423,7 +484,7 @@ def main():
         
         with st.chat_message("assistant", avatar="⚡"):
             with st.spinner("Buscando..."):
-                results = search(prompt, index, chunks, model)
+                results = search(prompt, index, chunks, model, client)
                 response, used = generate(prompt, results, client)
             st.write(response)
             show_sources(used)

@@ -283,11 +283,15 @@ def get_client():
 # ============================================
 def search(query, letters):
     q = query.lower()
-    stopwords = {'que','el','la','los','de','en','a','por','para','con','sobre','es','buffett','warren','carta','dice','qué','cómo','hola','hello','hi'}
+    stopwords = {'que','el','la','los','de','en','a','por','para','con','sobre','es','buffett','warren','carta','dice','qué','cómo','hola','hello','hi','buenas','buenos','dias','tardes','noches','gracias','thanks'}
     keywords = [w for w in re.findall(r'\w+', q) if w not in stopwords and len(w) > 2]
     
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
     target_year = year_match.group(1) if year_match else None
+    
+    # Si no hay keywords ni año específico, es un saludo - no buscar
+    if not keywords and not target_year:
+        return []
     
     results = []
     for year, data in letters.items():
@@ -300,7 +304,8 @@ def search(query, letters):
             if score > 0 or target_year:
                 results.append({'year': year, 'text': para[:1500], 'score': score or 0.1})
     
-    if not results:
+    # Solo usar fallback si hay keywords pero no resultados
+    if not results and keywords:
         for y in sorted(letters.keys(), reverse=True)[:2]:
             for p in letters[y].get('text', '').split('\n\n')[:2]:
                 if len(p) > 150:
@@ -316,10 +321,14 @@ def generate(query, letters, client):
     context = "\n\n".join([f"[{c['year']}]: {c['text']}" for c in chunks])
     sources = list(dict.fromkeys([c['year'] for c in chunks]))
     
-    messages = [
-        {
-            "role": "system",
-            "content": """Eres un asistente experto en las cartas anuales de Warren Buffett (1977-2024).
+    # Si no hay contexto (es un saludo), responder sin buscar
+    if not chunks:
+        system_msg = """Eres el asistente de BQuant especializado en las cartas anuales de Warren Buffett (1977-2024). 
+Tienes acceso a 48 cartas que abarcan 47 años de sabiduría inversora.
+Responde de forma amigable y breve. Invita al usuario a hacer preguntas sobre temas como: inversión, empresas, crisis financieras, inflación, o cualquier año específico entre 1977 y 2024."""
+        user_msg = query
+    else:
+        system_msg = """Eres un asistente experto en las cartas anuales de Warren Buffett (1977-2024).
 
 REGLAS:
 - Responde basándote SOLO en el contexto proporcionado
@@ -328,14 +337,14 @@ REGLAS:
 - Sé conciso pero completo (150-250 palabras)
 - No inventes información que no esté en el contexto
 - Sé directo y profesional"""
-        },
-        {
-            "role": "user", 
-            "content": f"""CONTEXTO DE LAS CARTAS:
+        user_msg = f"""CONTEXTO DE LAS CARTAS:
 {context}
 
 PREGUNTA: {query}"""
-        }
+    
+    messages = [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": user_msg}
     ]
     
     try:

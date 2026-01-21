@@ -14,7 +14,7 @@ Requiere en .streamlit/secrets.toml:
 import streamlit as st
 from groq import Groq
 import pickle
-import faiss
+import faiss-cpu
 from sentence_transformers import SentenceTransformer
 import re
 

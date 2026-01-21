@@ -14,7 +14,7 @@ st.set_page_config(
 )
 
 # API Key
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = "AIzaSyBuxu0jsV6t0hVBVmksD6LBJhKPu8VjPOY"
 
 # ============================================
 # ESTILOS CSS PREMIUM

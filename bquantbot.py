@@ -286,7 +286,7 @@ st.markdown("""
 @st.cache_data
 def load_berkshire_letters():
     try:
-        with open("data/berkshire_letters.json", "r", encoding="utf-8") as f:
+        with open("berkshire_letters.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
         return None

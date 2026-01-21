@@ -1,14 +1,6 @@
 """
 BQuant ChatBot - RAG con Embeddings Reales
 Búsqueda semántica sobre las cartas de Warren Buffett (1977-2024)
-
-USO:
-    pip install streamlit sentence-transformers faiss-cpu groq
-    python build_index.py  # Solo la primera vez
-    streamlit run app.py
-
-Requiere en .streamlit/secrets.toml:
-    GROQ_API_KEY = "tu-api-key"
 """
 
 import streamlit as st
@@ -29,7 +21,7 @@ CHUNKS_FILE = "chunks.pkl"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ============================================
-# CSS - DISEÑO EDITORIAL MINIMALISTA
+# CSS
 # ============================================
 st.markdown("""
 <style>
@@ -37,7 +29,6 @@ st.markdown("""
     
     :root {
         --bg: #0a0a0a;
-        --card: #111;
         --border: #222;
         --accent: #d4a853;
         --text: #eee;
@@ -47,11 +38,77 @@ st.markdown("""
     * { font-family: 'DM Sans', -apple-system, sans-serif; }
     #MainMenu, footer, header, .stDeployButton { display: none !important; }
     
-    .stApp, [data-testid="stAppViewContainer"], .main, .block-container {
+    /* FONDO UNIFORME EN TODO */
+    html, body, .stApp, 
+    [data-testid="stAppViewContainer"], 
+    [data-testid="stHeader"],
+    [data-testid="stBottom"],
+    [data-testid="stBottomBlockContainer"],
+    [data-testid="stBottomBlockContainer"] > div,
+    .main, 
+    .block-container {
         background: var(--bg) !important;
+        background-color: var(--bg) !important;
     }
-    [data-testid="stBottomBlockContainer"] { background: transparent !important; }
-    .block-container { padding: 2rem 1.5rem 6rem !important; max-width: 780px !important; }
+    
+    .block-container { 
+        padding: 2rem 1.5rem 8rem !important; 
+        max-width: 780px !important; 
+    }
+    
+    /* BARRA DE INPUT - FIJA ABAJO */
+    [data-testid="stBottom"] {
+        background: var(--bg) !important;
+        background-color: var(--bg) !important;
+        border-top: 1px solid var(--border) !important;
+        padding: 1rem 0 1.5rem 0 !important;
+    }
+    
+    [data-testid="stBottomBlockContainer"] {
+        background: var(--bg) !important;
+        background-color: var(--bg) !important;
+        max-width: 780px !important;
+        margin: 0 auto !important;
+        padding: 0 1.5rem !important;
+    }
+    
+    /* INPUT MÁS GRANDE */
+    [data-testid="stChatInput"] {
+        max-width: 100% !important;
+    }
+    
+    [data-testid="stChatInput"] > div {
+        background: #111 !important;
+        border: 1.5px solid var(--border) !important;
+        border-radius: 18px !important;
+        min-height: 60px !important;
+    }
+    
+    [data-testid="stChatInput"] > div:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 1px var(--accent) !important;
+    }
+    
+    [data-testid="stChatInput"] input, 
+    [data-testid="stChatInput"] textarea {
+        color: var(--text) !important;
+        font-size: 1.05rem !important;
+        padding: 1.1rem 1.3rem !important;
+        background: transparent !important;
+    }
+    
+    [data-testid="stChatInput"] input::placeholder { 
+        color: var(--muted) !important; 
+    }
+    
+    [data-testid="stChatInput"] button {
+        background: var(--accent) !important;
+        border: none !important;
+        border-radius: 14px !important;
+        min-width: 48px !important;
+        min-height: 48px !important;
+        margin: 6px 8px 6px 0 !important;
+    }
     
     /* HEADER */
     .header {
@@ -134,7 +191,8 @@ st.markdown("""
         border-bottom: 1px solid var(--border) !important;
         border-radius: 0 !important;
     }
-    [data-testid="stChatMessageContent"], [data-testid="stChatMessageContent"] p {
+    [data-testid="stChatMessageContent"], 
+    [data-testid="stChatMessageContent"] p {
         color: var(--text) !important;
         font-size: 0.92rem !important;
         line-height: 1.7 !important;
@@ -150,7 +208,7 @@ st.markdown("""
         border-top: 1px dashed var(--border);
     }
     .src {
-        background: var(--card);
+        background: #111;
         border: 1px solid var(--border);
         color: var(--muted);
         padding: 3px 10px;
@@ -159,27 +217,6 @@ st.markdown("""
         font-weight: 500;
     }
     .src b { color: var(--accent); }
-    
-    /* INPUT */
-    [data-testid="stChatInput"] > div {
-        background: var(--card) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 14px !important;
-    }
-    [data-testid="stChatInput"] > div:focus-within {
-        border-color: var(--accent) !important;
-    }
-    [data-testid="stChatInput"] input, [data-testid="stChatInput"] textarea {
-        color: var(--text) !important;
-        font-size: 0.92rem !important;
-        background: transparent !important;
-    }
-    [data-testid="stChatInput"] input::placeholder { color: var(--muted) !important; }
-    [data-testid="stChatInput"] button {
-        background: var(--accent) !important;
-        border: none !important;
-        border-radius: 10px !important;
-    }
     
     /* FOOTER */
     .footer {
@@ -229,14 +266,11 @@ def get_client():
 def search(query: str, index, chunks: list, model, top_k: int = 5) -> list[dict]:
     """Búsqueda semántica con FAISS"""
     
-    # Extraer año si se menciona
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
     year_filter = year_match.group(1) if year_match else None
     
-    # Embedding de la query
     q_emb = model.encode([query], normalize_embeddings=True, convert_to_numpy=True)
     
-    # Buscar (más resultados si hay filtro de año)
     k = top_k * 4 if year_filter else top_k
     scores, indices = index.search(q_emb.astype('float32'), min(k, len(chunks)))
     
@@ -247,7 +281,6 @@ def search(query: str, index, chunks: list, model, top_k: int = 5) -> list[dict]
         chunk = chunks[idx].copy()
         chunk['score'] = float(score)
         
-        # Filtrar por año
         if year_filter and chunk['year'] != year_filter:
             continue
         

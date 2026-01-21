@@ -1,3 +1,11 @@
+"""
+BQuant ChatBot v3 - RAG Avanzado
+- Búsqueda híbrida (embeddings + BM25)
+- Reranking con LLM
+- Citas exactas de Buffett
+- Follow-up contextual
+- Detección de confianza
+"""
 
 import streamlit as st
 from groq import Groq
@@ -368,7 +376,9 @@ Examples:
         )
         enhanced = response.choices[0].message.content.strip()
         return enhanced if enhanced else query
-    except:
+    except Exception as e:
+        if "rate" in str(e).lower():
+            raise e  # Propagar para manejar arriba
         return query
 
 
@@ -701,6 +711,8 @@ FORMATO DE CITAS:
         )
         return resp.choices[0].message.content, results, confidence_level
     except Exception as e:
+        if "rate" in str(e).lower() or "limit" in str(e).lower():
+            raise e  # Propagar para manejar en search_and_generate
         return f"Error: {e}", [], "error"
 
 
@@ -724,27 +736,33 @@ def search_and_generate(
     4. Generación con citas
     """
     
-    # 1. Resolver referencias anafóricas
-    resolved_query = resolve_followup(query, conversation_history or [], client)
+    try:
+        # 1. Resolver referencias anafóricas
+        resolved_query = resolve_followup(query, conversation_history or [], client)
+        
+        # 2. Búsqueda híbrida
+        candidates = hybrid_search(resolved_query, index, chunks, model, bm25, client, top_k=16)
+        
+        # 3. Reranking con LLM
+        if len(candidates) > 8:
+            reranked = rerank_with_llm(resolved_query, candidates, client, top_k=8)
+        else:
+            reranked = candidates
+        
+        # 4. Generar respuesta
+        response, used_chunks, confidence = generate_response(
+            resolved_query, 
+            reranked, 
+            client,
+            conversation_history
+        )
+        
+        return response, used_chunks, confidence
     
-    # 2. Búsqueda híbrida
-    candidates = hybrid_search(resolved_query, index, chunks, model, bm25, client, top_k=16)
-    
-    # 3. Reranking con LLM
-    if len(candidates) > 8:
-        reranked = rerank_with_llm(resolved_query, candidates, client, top_k=8)
-    else:
-        reranked = candidates
-    
-    # 4. Generar respuesta
-    response, used_chunks, confidence = generate_response(
-        resolved_query, 
-        reranked, 
-        client,
-        conversation_history
-    )
-    
-    return response, used_chunks, confidence
+    except Exception as e:
+        if "rate" in str(e).lower() or "limit" in str(e).lower():
+            return "⏳ Demasiadas consultas. Intenta en unos segundos.", [], "error"
+        return f"Error: {str(e)}", [], "error"
 
 
 # ============================================

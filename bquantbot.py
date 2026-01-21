@@ -1,5 +1,5 @@
 import streamlit as st
-import google.generativeai as genai
+from google import genai
 import json
 import re
 
@@ -17,7 +17,7 @@ st.set_page_config(
 GEMINI_API_KEY = "AIzaSyBuxu0jsV6t0hVBVmksD6LBJhKPu8VjPOY"
 
 # ============================================
-# ESTILOS CSS - COMPACTO
+# ESTILOS CSS
 # ============================================
 st.markdown("""
 <style>
@@ -29,8 +29,7 @@ st.markdown("""
     
     .stApp {
         background: #08080c;
-        background-image: 
-            radial-gradient(ellipse at top, rgba(99, 102, 241, 0.1) 0%, transparent 50%);
+        background-image: radial-gradient(ellipse at top, rgba(99, 102, 241, 0.1) 0%, transparent 50%);
     }
     
     .block-container {
@@ -38,7 +37,6 @@ st.markdown("""
         max-width: 800px !important;
     }
     
-    /* Header compacto */
     .header {
         text-align: center;
         padding: 0.75rem 0;
@@ -101,7 +99,6 @@ st.markdown("""
         50% { opacity: 0.4; }
     }
     
-    /* Welcome compacto */
     .welcome {
         text-align: center;
         padding: 1rem 0;
@@ -119,7 +116,6 @@ st.markdown("""
         margin-top: 0.25rem;
     }
     
-    /* Buttons */
     .stButton > button {
         background: rgba(255, 255, 255, 0.03) !important;
         border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -136,7 +132,6 @@ st.markdown("""
         color: white !important;
     }
     
-    /* Chat */
     .stChatMessage {
         background: rgba(255, 255, 255, 0.02) !important;
         border: 1px solid rgba(255, 255, 255, 0.05) !important;
@@ -150,7 +145,6 @@ st.markdown("""
         line-height: 1.5 !important;
     }
     
-    /* Input - MÁS ARRIBA */
     [data-testid="stChatInput"] > div {
         background: rgba(20, 20, 30, 0.95) !important;
         border: 1px solid rgba(99, 102, 241, 0.2) !important;
@@ -176,7 +170,6 @@ st.markdown("""
         border-radius: 12px !important;
     }
     
-    /* Source */
     .source-tag {
         display: inline-block;
         background: rgba(99, 102, 241, 0.1);
@@ -188,7 +181,6 @@ st.markdown("""
         margin-top: 0.5rem;
     }
     
-    /* Footer inline */
     .footer {
         text-align: center;
         padding: 0.75rem 0;
@@ -214,9 +206,8 @@ def load_berkshire_letters():
 @st.cache_resource
 def init_gemini():
     if GEMINI_API_KEY:
-        genai.configure(api_key=GEMINI_API_KEY)
-        # Usar modelo correcto
-        return genai.GenerativeModel('gemini-2.0-flash')
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        return client
     return None
 
 # ============================================
@@ -228,7 +219,8 @@ def search_letters(query: str, letters: dict, max_chunks: int = 5, chunk_size: i
     stopwords = {'que', 'qué', 'como', 'cómo', 'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 
                  'a', 'por', 'para', 'con', 'sobre', 'es', 'son', 'fue', 'the', 'a', 'an', 'of', 'in', 
                  'to', 'for', 'on', 'with', 'about', 'is', 'are', 'what', 'how', 'buffett', 'warren', 
-                 'berkshire', 'piensa', 'dijo', 'carta', 'letter', 'año', 'year', 'resume', 'hola', 'hello'}
+                 'berkshire', 'piensa', 'dijo', 'carta', 'letter', 'año', 'year', 'resume', 'hola', 
+                 'hello', 'dice', 'buena', 'empresa'}
     
     keywords = [w for w in re.findall(r'\w+', query_lower) if w not in stopwords and len(w) > 2]
     
@@ -264,7 +256,7 @@ def search_letters(query: str, letters: dict, max_chunks: int = 5, chunk_size: i
 # ============================================
 # RESPUESTA
 # ============================================
-def get_response(query: str, letters: dict, model, history: list) -> tuple:
+def get_response(query: str, letters: dict, client, history: list) -> tuple:
     chunks = search_letters(query, letters)
     
     context = ""
@@ -291,7 +283,10 @@ Usuario: {query}
 Respuesta:"""
     
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
         return response.text, sources
     except Exception as e:
         return f"Error: {str(e)}", []
@@ -300,7 +295,7 @@ Respuesta:"""
 # INIT
 # ============================================
 letters = load_berkshire_letters()
-model = init_gemini()
+client = init_gemini()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -358,7 +353,7 @@ for msg in st.session_state.messages:
 # ============================================
 # INPUT
 # ============================================
-if letters and model:
+if letters and client:
     if prompt := st.chat_input("Pregunta sobre Buffett..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
@@ -367,7 +362,7 @@ if letters and model:
         
         with st.chat_message("assistant", avatar="⚡"):
             with st.spinner(""):
-                response, sources = get_response(prompt, letters, model, st.session_state.messages)
+                response, sources = get_response(prompt, letters, client, st.session_state.messages)
             st.write(response)
             if sources:
                 st.markdown(f'<div class="source-tag">📚 {", ".join(sources)}</div>', unsafe_allow_html=True)

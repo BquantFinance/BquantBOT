@@ -21,7 +21,6 @@ st.markdown("""
     
     #MainMenu, footer, header, .stDeployButton { display: none !important; }
     
-    /* FONDO PRINCIPAL - NO CAMBIA */
     .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"], 
     section[data-testid="stSidebar"], .main, .main .block-container {
         background: #050508 !important;
@@ -32,7 +31,6 @@ st.markdown("""
     
     [data-testid="stBottomBlockContainer"] {
         background: transparent !important;
-        padding-bottom: 0 !important;
     }
     
     .block-container {
@@ -164,10 +162,7 @@ st.markdown("""
         color: rgba(255, 255, 255, 0.92) !important;
     }
     
-    /* ============================================
-       CHAT INPUT - FONDO LIMPIO
-       ============================================ */
-    
+    /* Chat input */
     [data-testid="stBottom"],
     [data-testid="stBottom"] > div,
     [data-testid="stBottomBlockContainer"],
@@ -255,16 +250,12 @@ st.markdown("""
         .logo { font-size: 2.2rem; }
         .welcome-title { font-size: 1.25rem; }
         .block-container { padding: 1rem !important; }
-        [data-testid="stBottom"] {
-            bottom: 10% !important;
-            padding: 0 1rem !important;
-        }
     }
 </style>
 """, unsafe_allow_html=True)
 
 # ============================================
-# DATA
+# DATA & CLIENT
 # ============================================
 @st.cache_data
 def load_letters():
@@ -279,53 +270,118 @@ def get_client():
     return Groq(api_key=GROQ_API_KEY)
 
 # ============================================
+# TRANSLATE QUERY TO ENGLISH
+# ============================================
+def translate_to_english(query, client):
+    """Traduce la query a inglés para buscar en las cartas"""
+    
+    # Detectar si es un saludo simple
+    greetings = ['hola', 'hello', 'hi', 'buenas', 'buenos dias', 'buenas tardes', 'hey']
+    if query.lower().strip() in greetings or len(query.split()) <= 2 and not any(c.isdigit() for c in query):
+        # Verificar si tiene contenido sustancial
+        if not any(word in query.lower() for word in ['qué', 'cómo', 'cuál', 'cuándo', 'dónde', 'por qué', 'what', 'how', 'when', 'why']):
+            return None  # Es solo un saludo
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Extract search keywords in English from the user's question about Warren Buffett's letters.
+Return ONLY the English keywords, nothing else. No explanations.
+
+Examples:
+- "¿Qué piensa Buffett sobre la inflación?" → "inflation"
+- "¿Qué dijo sobre la crisis de 2008?" → "crisis 2008 financial crash"
+- "¿Cuál es su filosofía de inversión?" → "investment philosophy approach"
+- "Resume la carta de 1983" → "1983"
+- "¿Qué opina del oro?" → "gold"
+- "¿Cómo evalúa una empresa?" → "evaluate company business value"
+- "Háblame de los seguros" → "insurance"
+- "¿Qué son los moats?" → "moat competitive advantage"
+"""
+                },
+                {"role": "user", "content": query}
+            ],
+            temperature=0,
+            max_tokens=50,
+        )
+        keywords = response.choices[0].message.content.strip()
+        return keywords if keywords else None
+    except:
+        return None
+
+# ============================================
 # SEARCH
 # ============================================
-def search(query, letters):
-    q = query.lower()
-    stopwords = {'que','el','la','los','de','en','a','por','para','con','sobre','es','buffett','warren','carta','dice','qué','cómo','hola','hello','hi','buenas','buenos','dias','tardes','noches','gracias','thanks'}
-    keywords = [w for w in re.findall(r'\w+', q) if w not in stopwords and len(w) > 2]
+def search(query_keywords, letters):
+    """Busca párrafos relevantes usando keywords en inglés"""
     
-    year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
+    if not query_keywords:
+        return []
+    
+    # Extraer keywords y año
+    keywords = [w.lower() for w in re.findall(r'\w+', query_keywords) if len(w) > 2]
+    year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query_keywords)
     target_year = year_match.group(1) if year_match else None
     
-    # Si no hay keywords ni año específico, es un saludo - no buscar
     if not keywords and not target_year:
         return []
     
     results = []
+    
     for year, data in letters.items():
         if target_year and year != target_year:
             continue
-        for para in data.get('text', '').split('\n\n'):
-            if len(para) < 100:
+            
+        text = data.get('text', '')
+        paragraphs = text.split('\n\n')
+        
+        for para in paragraphs:
+            if len(para) < 80:
                 continue
-            score = sum(para.lower().count(k) for k in keywords)
+                
+            para_lower = para.lower()
+            score = 0
+            
+            for kw in keywords:
+                count = para_lower.count(kw)
+                if count > 0:
+                    score += count * 2
+            
             if score > 0 or target_year:
-                results.append({'year': year, 'text': para[:1500], 'score': score or 0.1})
+                results.append({
+                    'year': year, 
+                    'text': para[:2000], 
+                    'score': score if score > 0 else 0.1
+                })
     
-    # Solo usar fallback si hay keywords pero no resultados
-    if not results and keywords:
-        for y in sorted(letters.keys(), reverse=True)[:2]:
-            for p in letters[y].get('text', '').split('\n\n')[:2]:
-                if len(p) > 150:
-                    results.append({'year': y, 'text': p[:1500], 'score': 0})
-    
-    return sorted(results, key=lambda x: -x['score'])[:5]
+    results.sort(key=lambda x: -x['score'])
+    return results[:5]
 
 # ============================================
-# GENERATE
+# GENERATE RESPONSE
 # ============================================
 def generate(query, letters, client):
-    chunks = search(query, letters)
+    # 1. Traducir query a keywords en inglés
+    english_keywords = translate_to_english(query, client)
+    
+    # 2. Buscar en las cartas
+    if english_keywords:
+        chunks = search(english_keywords, letters)
+    else:
+        chunks = []
+    
     context = "\n\n".join([f"[{c['year']}]: {c['text']}" for c in chunks])
     sources = list(dict.fromkeys([c['year'] for c in chunks]))
     
-    # Si no hay contexto (es un saludo), responder sin buscar
+    # 3. Generar respuesta
     if not chunks:
+        # Es un saludo o no hay resultados
         system_msg = """Eres el asistente de BQuant especializado en las cartas anuales de Warren Buffett (1977-2024). 
 Tienes acceso a 48 cartas que abarcan 47 años de sabiduría inversora.
-Responde de forma amigable y breve. Invita al usuario a hacer preguntas sobre temas como: inversión, empresas, crisis financieras, inflación, o cualquier año específico entre 1977 y 2024."""
+Responde de forma amigable y breve en español. Invita al usuario a preguntar sobre temas como inversión, empresas, crisis financieras, inflación, seguros, o cualquier año específico."""
         user_msg = query
     else:
         system_msg = """Eres un asistente experto en las cartas anuales de Warren Buffett (1977-2024).
@@ -334,25 +390,23 @@ REGLAS:
 - Responde basándote SOLO en el contexto proporcionado
 - Cita el año cuando menciones algo específico: "En [año], Buffett..."
 - Responde en español
-- Sé conciso pero completo (150-250 palabras)
-- No inventes información que no esté en el contexto
+- Sé conciso pero completo (200-300 palabras)
+- No inventes información
 - Sé directo y profesional"""
         user_msg = f"""CONTEXTO DE LAS CARTAS:
 {context}
 
-PREGUNTA: {query}"""
-    
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": user_msg}
-    ]
+PREGUNTA DEL USUARIO: {query}"""
     
     try:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=messages,
+            messages=[
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg}
+            ],
             temperature=0.7,
-            max_tokens=600,
+            max_tokens=700,
         )
         return response.choices[0].message.content, sources
     except Exception as e:
@@ -391,7 +445,7 @@ if not st.session_state.messages:
     """, unsafe_allow_html=True)
     
     cols = st.columns(3)
-    suggestions = ["Filosofía de inversión", "Crisis de 2008", "Sobre la inflación", "Carta de 2023", "Buena empresa", "Opinión del oro"]
+    suggestions = ["Filosofía de inversión", "Crisis de 2008", "Sobre la inflación", "Carta de 1983", "Buena empresa", "Opinión del oro"]
     for i, s in enumerate(suggestions):
         with cols[i % 3]:
             if st.button(s, key=f"sug_{i}", use_container_width=True):

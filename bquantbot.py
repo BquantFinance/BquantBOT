@@ -1,11 +1,3 @@
-"""
-BQuant ChatBot v3 - RAG Avanzado
-- Búsqueda híbrida (embeddings + BM25)
-- Reranking con LLM
-- Citas exactas de Buffett
-- Follow-up contextual
-- Detección de confianza
-"""
 
 import streamlit as st
 from groq import Groq

@@ -19,7 +19,7 @@ GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 INDEX_FILE = "faiss_index.bin"
 CHUNKS_FILE = "chunks.pkl"
 INSIDER_FILE = "insider_data_all.csv"
-CONGRESS_FILE = "CongressTrading.csv"
+CONGRESS_FILE = "Congresstrading.csv"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ============================================

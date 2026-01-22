@@ -849,7 +849,7 @@ Responde SOLO con JSON válido, sin texto adicional:
     "year": 2024 o null,
     "quarter": 1 o 2 o 3 o 4 o null,
     "min_amount": 50000 o null,
-    "aggregation": "by_politician" o "by_party" o "by_symbol" o "by_industry" o "top_buys" o "top_sells" o "summary" o "recent" o null,
+    "aggregation": "by_politician" o "by_party" o "by_symbol" o "by_industry" o "by_year" o "top_buys" o "top_sells" o "summary" o "recent" o null,
     "limit": 10,
     "sort_by": "amount" o "date" o "gain_loss" o null
 }
@@ -863,7 +863,9 @@ Ejemplos:
 - "¿Qué políticos invierten en tecnología?" → {"industry": "Information Technology", "aggregation": "by_politician"}
 - "Transacciones recientes del Congreso" → {"aggregation": "recent", "limit": 20}
 - "¿Quién ganó más dinero?" → {"aggregation": "by_politician", "sort_by": "gain_loss"}
-- "Compras mayores a $100,000" → {"action": "buy", "min_amount": 100000}"""
+- "Compras mayores a $100,000" → {"action": "buy", "min_amount": 100000}
+- "Evolución del trading del Congreso por año" → {"aggregation": "by_year"}
+- "¿Cómo ha cambiado el trading de Pelosi?" → {"politicians": ["Pelosi"], "aggregation": "by_year"}"""
                 },
                 {"role": "user", "content": query}
             ],
@@ -974,24 +976,35 @@ def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
         }).rename(columns={'Symbol': 'Unique_Stocks', 'Politician': 'Num_Trades', 'Gain/Loss': 'Avg_Gain_Loss'})
         result = result.sort_values('Amount', ascending=False).head(limit)
         result_type = "aggregated_by_industry"
+    
+    elif aggregation == "by_year":
+        result = filtered.groupby('year').agg({
+            'Amount': 'sum',
+            'Gain/Loss': 'mean',
+            'Symbol': 'nunique',
+            'Politician': 'nunique',
+            'Filed Date': 'count'
+        }).rename(columns={'Symbol': 'Unique_Stocks', 'Politician': 'Unique_Politicians', 'Filed Date': 'Num_Trades', 'Gain/Loss': 'Avg_Gain_Loss'})
+        result = result.sort_index(ascending=False).head(limit)
+        result_type = "aggregated_by_year"
         
     elif aggregation == "top_buys":
         buys = filtered[filtered['Action'].str.contains('Purchase', case=False, na=False)]
         result = buys.nlargest(limit, 'Amount')[
-            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
         ]
         result_type = "top_buys"
         
     elif aggregation == "top_sells":
         sells = filtered[filtered['Action'].str.contains('Sale', case=False, na=False)]
         result = sells.nlargest(limit, 'Amount')[
-            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
         ]
         result_type = "top_sells"
     
     elif aggregation == "recent":
         result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
-            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Industry']
+            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Industry']
         ]
         result_type = "recent"
         
@@ -1032,15 +1045,15 @@ def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
         sort_by = params.get("sort_by", "date")
         if sort_by == "amount":
             result = filtered.nlargest(limit, 'Amount')[
-                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
             ]
         elif sort_by == "gain_loss":
             result = filtered.nlargest(limit, 'Gain/Loss')[
-                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
             ]
         else:
             result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
-                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
             ]
         result_type = "transactions"
     
@@ -1087,11 +1100,21 @@ TOP 5 ACCIONES MÁS OPERADAS:
 TOP 5 INDUSTRIAS:
 {json.dumps(data['top_industries'], indent=2)}"""
     elif isinstance(data, pd.DataFrame):
-        if len(data) > 30:
-            data_context = data.head(30).to_string()
-            data_context += f"\n\n... y {len(data) - 30} registros más"
+        # Add year summary if available
+        if 'year' in data.columns:
+            year_summary = data.groupby('year').agg({
+                'Amount': ['sum', 'count']
+            }).to_string()
+            data_str = data.head(40).to_string() if len(data) > 40 else data.to_string()
+            data_context = f"RESUMEN POR AÑO:\n{year_summary}\n\nDETALLE DE TRANSACCIONES:\n{data_str}"
+            if len(data) > 40:
+                data_context += f"\n\n... y {len(data) - 40} registros más"
         else:
-            data_context = data.to_string()
+            if len(data) > 30:
+                data_context = data.head(30).to_string()
+                data_context += f"\n\n... y {len(data) - 30} registros más"
+            else:
+                data_context = data.to_string()
     else:
         data_context = str(data)
     
@@ -1105,16 +1128,24 @@ TOP 5 INDUSTRIAS:
 
 INSTRUCCIONES:
 1. Analiza los datos proporcionados y responde de forma clara y estructurada
-2. Usa formato de moneda apropiado (millones con M, miles con K)
-3. Destaca patrones importantes:
-   - Diferencias entre partidos (D=Demócrata, R=Republicano)
-   - Diferencias entre cámaras (House=Representantes, Senate=Senado)
-   - Políticos más activos y sus sectores preferidos
+2. **ORGANIZA CRONOLÓGICAMENTE**: Cuando muestres transacciones de un político, agrupa por año (más reciente primero)
+3. Usa formato de moneda apropiado (millones con M, miles con K)
+4. Destaca patrones importantes:
+   - Evolución temporal de las inversiones
+   - Sectores preferidos y cambios a lo largo del tiempo
    - Rendimiento (Gain/Loss) de las operaciones
-4. Sé objetivo y neutral políticamente
-5. Responde en español
-6. Máximo 400 palabras
-7. NO inventes datos que no estén en el contexto
+5. Sé objetivo y neutral políticamente
+6. Responde en español
+7. Máximo 400 palabras
+8. NO inventes datos que no estén en el contexto
+
+FORMATO SUGERIDO PARA TRANSACCIONES DE UN POLÍTICO:
+**2024:**
+- NVDA: $X (sector)
+- AAPL: $Y (sector)
+
+**2023:**
+- ...
 
 CONTEXTO IMPORTANTE:
 - Amount = Valor estimado de la transacción (punto medio del rango reportado)
@@ -1638,6 +1669,7 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
             "aggregated_by_party": "🏛️ Por Partido",
             "aggregated_by_symbol": "📈 Por Acción",
             "aggregated_by_industry": "🏭 Por Industria",
+            "aggregated_by_year": "📅 Por Año",
             "transactions": "📋 Transacciones",
             "recent": "🕐 Recientes"
         }

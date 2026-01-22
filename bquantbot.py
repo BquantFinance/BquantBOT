@@ -19,7 +19,7 @@ GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 INDEX_FILE = "faiss_index.bin"
 CHUNKS_FILE = "chunks.pkl"
 INSIDER_FILE = "insider_data_all.csv"
-CONGRESS_FILE = "Congresstrading.csv"
+CONGRESS_FILE = "CongressTrading.csv"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ============================================
@@ -1744,8 +1744,18 @@ def main():
         st.session_state.pending = None
     
     # HEADER
-    insider_count = f"{len(insider_df):,}" if insider_df is not None else "0"
-    congress_count = f"{len(congress_df):,}" if congress_df is not None else "0"
+    if insider_df is not None:
+        insider_count = f"{insider_df['Insider Name'].nunique():,}"
+        insider_vol = f"${insider_df['Value_C'].sum() / 1e9:.1f}B"
+    else:
+        insider_count = "0"
+        insider_vol = "$0"
+    
+    if congress_df is not None:
+        congress_count = f"{congress_df['Politician'].nunique():,}"
+    else:
+        congress_count = "0"
+    
     buffett_count = "48 cartas" if buffett_available else "N/A"
     
     st.markdown(f"""
@@ -1756,7 +1766,7 @@ def main():
             <span><span class="meta-dot"></span>Online</span>
             <span>📚 {buffett_count}</span>
             <span>📊 {insider_count} insiders</span>
-            <span>🏛️ {congress_count} congress</span>
+            <span>🏛️ {congress_count} políticos</span>
         </div>
     </div>
     """, unsafe_allow_html=True)

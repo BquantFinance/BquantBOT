@@ -1,4 +1,3 @@
-
 import streamlit as st
 from groq import Groq
 import pickle
@@ -6,16 +5,21 @@ import faiss
 from sentence_transformers import SentenceTransformer
 import re
 import math
+import json
+import pandas as pd
 from collections import Counter
+from datetime import datetime, timedelta
 
 # ============================================
 # CONFIG
 # ============================================
-st.set_page_config(page_title="BQuant · Buffett", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="BQuant · Buffett + Insiders", page_icon="⚡", layout="centered")
 
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 INDEX_FILE = "faiss_index.bin"
 CHUNKS_FILE = "chunks.pkl"
+INSIDER_FILE = "insider_data_all.csv"
+CONGRESS_FILE = "CongressTrading.csv"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 # ============================================
@@ -29,6 +33,8 @@ st.markdown("""
         --bg: #0a0a0a;
         --border: #222;
         --accent: #d4a853;
+        --accent-green: #22c55e;
+        --accent-red: #ef4444;
         --text: #eee;
         --muted: #777;
     }
@@ -200,6 +206,18 @@ st.markdown("""
         font-weight: 500;
     }
     .src b { color: var(--accent); }
+    .src.insider { border-color: #3b82f6; }
+    .src.insider b { color: #3b82f6; }
+    .src.congress { border-color: #8b5cf6; }
+    .src.congress b { color: #8b5cf6; }
+    .src.democrat { border-color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
+    .src.democrat b { color: #3b82f6; }
+    .src.republican { border-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
+    .src.republican b { color: #ef4444; }
+    .src.buy { border-color: var(--accent-green); }
+    .src.buy b { color: var(--accent-green); }
+    .src.sell { border-color: var(--accent-red); }
+    .src.sell b { color: var(--accent-red); }
     
     .confidence {
         font-size: 0.68rem;
@@ -216,6 +234,32 @@ st.markdown("""
         background: rgba(255, 235, 59, 0.15);
         border: 1px solid rgba(255, 235, 59, 0.3);
         color: #fdd835;
+    }
+    
+    .data-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-left: 8px;
+    }
+    .data-badge.buffett {
+        background: rgba(212, 168, 83, 0.2);
+        color: var(--accent);
+        border: 1px solid rgba(212, 168, 83, 0.4);
+    }
+    .data-badge.insider {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+        border: 1px solid rgba(59, 130, 246, 0.4);
+    }
+    .data-badge.congress {
+        background: rgba(139, 92, 246, 0.2);
+        color: #8b5cf6;
+        border: 1px solid rgba(139, 92, 246, 0.4);
     }
     
     .footer {
@@ -262,6 +306,69 @@ def get_client():
 def build_bm25_index(_chunks):
     """Construye índice BM25 para búsqueda keyword"""
     return BM25(_chunks)
+
+@st.cache_data
+def load_insider_data():
+    """Carga y preprocesa datos de insider trading (764K+ transacciones)"""
+    try:
+        # Trade Date es el índice
+        df = pd.read_csv(INSIDER_FILE, index_col=0)
+        
+        # Convertir índice a datetime
+        df.index = pd.to_datetime(df.index, errors='coerce')
+        df.index.name = 'Trade Date'
+        
+        # Reset index para tenerlo como columna (más fácil para filtros)
+        df = df.reset_index()
+        
+        # Convertir Filing Date
+        df['Filing Date'] = pd.to_datetime(df['Filing Date'], errors='coerce')
+        
+        # Limpiar valores numéricos
+        df['Value_C'] = pd.to_numeric(df['Value_C'], errors='coerce').fillna(0)
+        df['Value_V'] = pd.to_numeric(df['Value_V'], errors='coerce').fillna(0)
+        df['Qty'] = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
+        df['Price'] = pd.to_numeric(df['Price'], errors='coerce').fillna(0)
+        df['year'] = pd.to_numeric(df['year'], errors='coerce')
+        df['month'] = pd.to_numeric(df['month'], errors='coerce')
+        df['quarter'] = pd.to_numeric(df['quarter'], errors='coerce')
+        
+        # Asegurar que is_sp500 es booleano
+        df['is_sp500'] = df['is_sp500'].astype(bool)
+        
+        return df
+    except Exception as e:
+        st.error(f"Error cargando insider data: {e}")
+        return None
+
+
+@st.cache_data
+def load_congress_data():
+    """Carga y preprocesa datos de trading del Congreso (173K+ transacciones)"""
+    try:
+        df = pd.read_csv(CONGRESS_FILE)
+        
+        # Convertir fechas
+        df['Filed Date'] = pd.to_datetime(df['Filed Date'], errors='coerce')
+        df['Purchase Date'] = pd.to_datetime(df['Purchase Date'], errors='coerce')
+        
+        # Limpiar valores numéricos
+        df['Amount'] = pd.to_numeric(df['Amount'], errors='coerce').fillna(0)
+        df['Gain/Loss'] = pd.to_numeric(df['Gain/Loss'], errors='coerce').fillna(0)
+        
+        # Extraer año y mes de Filed Date
+        df['year'] = df['Filed Date'].dt.year
+        df['month'] = df['Filed Date'].dt.month
+        df['quarter'] = df['Filed Date'].dt.quarter
+        
+        # Limpiar Party y Chamber
+        df['Party'] = df['Party'].fillna('Unknown')
+        df['Chamber'] = df['Chamber'].fillna('Unknown')
+        
+        return df
+    except Exception as e:
+        st.error(f"Error cargando congress data: {e}")
+        return None
 
 
 # ============================================
@@ -329,7 +436,747 @@ class BM25:
 
 
 # ============================================
-# QUERY ENHANCEMENT
+# QUERY ROUTER
+# ============================================
+def route_query(query: str, client) -> str:
+    """
+    Determina si la consulta es sobre:
+    - INSIDER: datos de insider trading del mercado US (764K+ transacciones)
+    - CONGRESS: datos de trading del Congreso US (173K+ transacciones)
+    - BUFFETT: cartas anuales de Warren Buffett
+    """
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Clasifica la consulta en UNA categoría:
+
+CONGRESS: Preguntas sobre trading de políticos, congresistas, senadores, representantes,
+          transacciones del Congreso, Pelosi, demócratas/republicanos comprando acciones,
+          House, Senate, partidos políticos y sus inversiones.
+          
+          Palabras clave: congreso, congresista, senador, representante, político, Pelosi,
+          demócrata, republicano, House, Senate, cámara, partido, políticos comprando/vendiendo
+
+INSIDER: Preguntas sobre insider trading CORPORATIVO, transacciones de ejecutivos de empresas,
+         CEOs, CFOs, directores de empresas comprando/vendiendo acciones de SUS propias empresas,
+         movimientos de directivos corporativos (NO políticos).
+         
+         Palabras clave: insider, ejecutivo, directivo, CEO, CFO, director corporativo,
+         Tim Cook, Elon Musk (transacciones corporativas), S&P 500 insiders
+
+BUFFETT: Preguntas sobre la filosofía de inversión de Warren Buffett, cartas de Berkshire Hathaway,
+         sabiduría inversora, value investing, qué piensa/dijo Buffett.
+         
+         Palabras clave: Buffett, Berkshire, carta, filosofía, value investing, moat
+
+Responde SOLO con: CONGRESS, INSIDER o BUFFETT"""
+                },
+                {"role": "user", "content": query}
+            ],
+            temperature=0,
+            max_tokens=10
+        )
+        route = response.choices[0].message.content.strip().upper()
+        # Limpiar respuesta
+        if "CONGRESS" in route:
+            return "CONGRESS"
+        elif "INSIDER" in route:
+            return "INSIDER"
+        elif "BUFFETT" in route:
+            return "BUFFETT"
+        return "BUFFETT"  # Default
+    except Exception as e:
+        return "BUFFETT"
+
+
+# ============================================
+# INSIDER DATA SEARCH
+# ============================================
+def extract_insider_params(query: str, client) -> dict:
+    """Extrae parámetros estructurados de la consulta para filtrar datos de insider"""
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Extrae parámetros de búsqueda de la consulta sobre insider trading.
+Responde SOLO con JSON válido, sin texto adicional:
+
+{
+    "symbols": ["AAPL", "MSFT"] o null,
+    "insider_names": ["Tim Cook"] o null,
+    "titles": ["CEO", "CFO", "Dir"] o null,
+    "trade_type": "buy" o "sell" o "both" o null,
+    "year": 2024 o null,
+    "quarter": 1 o 2 o 3 o 4 o null,
+    "month": 1-12 o null,
+    "min_value": 1000000 o null,
+    "is_sp500": true o false o null,
+    "aggregation": "by_company" o "by_insider" o "by_month" o "top_buys" o "top_sells" o "summary" o "recent" o null,
+    "limit": 10,
+    "sort_by": "value" o "date" o "quantity" o null
+}
+
+Ejemplos:
+- "¿Qué insiders compraron en Apple?" → {"symbols": ["AAPL"], "trade_type": "buy", "limit": 20}
+- "Mayores ventas de 2024" → {"trade_type": "sell", "year": 2024, "aggregation": "top_sells", "limit": 10}
+- "¿Tim Cook vendió acciones?" → {"insider_names": ["Tim Cook"], "trade_type": "sell"}
+- "Resumen de insider trading Q4 2024" → {"year": 2024, "quarter": 4, "aggregation": "summary"}
+- "CEOs que más compraron" → {"titles": ["CEO"], "trade_type": "buy", "aggregation": "by_insider", "sort_by": "value"}
+- "Compras mayores a 10 millones" → {"trade_type": "buy", "min_value": 10000000, "aggregation": "top_buys"}
+- "Insider trading en empresas del S&P 500" → {"is_sp500": true, "aggregation": "summary"}
+- "Transacciones recientes" → {"aggregation": "recent", "limit": 20}
+- "¿Qué pasó en noviembre 2024?" → {"year": 2024, "month": 11, "aggregation": "summary"}
+- "Empresas fuera del S&P con más compras" → {"is_sp500": false, "trade_type": "buy", "aggregation": "by_company"}
+- "Últimas compras de directores" → {"titles": ["Dir", "Director"], "trade_type": "buy", "aggregation": "recent"}"""
+                },
+                {"role": "user", "content": query}
+            ],
+            temperature=0,
+            max_tokens=300
+        )
+        
+        content = response.choices[0].message.content.strip()
+        # Limpiar posibles backticks de markdown
+        content = re.sub(r'^```json\s*', '', content)
+        content = re.sub(r'\s*```$', '', content)
+        content = re.sub(r'^```\s*', '', content)
+        
+        params = json.loads(content)
+        return params
+    except Exception as e:
+        return {"limit": 20, "aggregation": "summary"}
+
+
+def search_insider_data(query: str, df: pd.DataFrame, client) -> dict:
+    """Busca y filtra datos de insider trading según la consulta (764K+ transacciones)"""
+    
+    params = extract_insider_params(query, client)
+    filtered = df.copy()
+    
+    # Filtrar por S&P 500
+    if params.get("is_sp500") is not None:
+        filtered = filtered[filtered['is_sp500'] == params["is_sp500"]]
+    
+    # Filtrar por símbolos
+    if params.get("symbols"):
+        symbols = [s.upper() for s in params["symbols"]]
+        filtered = filtered[filtered['Symbol'].isin(symbols)]
+    
+    # Filtrar por nombre de insider
+    if params.get("insider_names"):
+        pattern = '|'.join(params["insider_names"])
+        filtered = filtered[filtered['Insider Name'].str.contains(pattern, case=False, na=False)]
+    
+    # Filtrar por título
+    if params.get("titles"):
+        pattern = '|'.join(params["titles"])
+        filtered = filtered[filtered['Title'].str.contains(pattern, case=False, na=False)]
+    
+    # Filtrar por tipo de transacción
+    if params.get("trade_type") == "buy":
+        filtered = filtered[filtered['Trade Type'].str.contains('P', case=False, na=False)]
+    elif params.get("trade_type") == "sell":
+        filtered = filtered[filtered['Trade Type'].str.contains('S', case=False, na=False)]
+    
+    # Filtrar por año
+    if params.get("year"):
+        filtered = filtered[filtered['year'] == float(params["year"])]
+    
+    # Filtrar por trimestre
+    if params.get("quarter"):
+        filtered = filtered[filtered['quarter'] == float(params["quarter"])]
+    
+    # Filtrar por mes
+    if params.get("month"):
+        filtered = filtered[filtered['month'] == float(params["month"])]
+    
+    # Filtrar por valor mínimo
+    if params.get("min_value"):
+        min_val = params["min_value"]
+        filtered = filtered[
+            (filtered['Value_C'].abs() >= min_val) | 
+            (filtered['Value_V'].abs() >= min_val)
+        ]
+    
+    limit = params.get("limit", 20)
+    aggregation = params.get("aggregation")
+    
+    # Realizar agregación según tipo
+    if aggregation == "by_company":
+        result = filtered.groupby('Symbol').agg({
+            'Value_C': 'sum',
+            'Value_V': 'sum',
+            'Qty': 'sum',
+            'Trade Date': 'count',
+            'is_sp500': 'first'
+        }).rename(columns={'Trade Date': 'Num_Trades'})
+        result['Net_Value'] = result['Value_C'] + result['Value_V']
+        result = result.sort_values('Net_Value', ascending=False).head(limit)
+        result_type = "aggregated_by_company"
+        
+    elif aggregation == "by_insider":
+        result = filtered.groupby(['Insider Name', 'Symbol']).agg({
+            'Value_C': 'sum',
+            'Value_V': 'sum',
+            'Qty': 'sum',
+            'Title': 'first',
+            'Trade Date': 'count'
+        }).rename(columns={'Trade Date': 'Num_Trades'})
+        result['Net_Value'] = result['Value_C'] + result['Value_V']
+        result = result.sort_values('Value_C', ascending=False).head(limit)
+        result_type = "aggregated_by_insider"
+        
+    elif aggregation == "by_month":
+        filtered['YearMonth'] = filtered['Trade Date'].dt.to_period('M')
+        result = filtered.groupby('YearMonth').agg({
+            'Value_C': 'sum',
+            'Value_V': 'sum',
+            'Qty': 'sum',
+            'Symbol': 'count'
+        }).rename(columns={'Symbol': 'Num_Trades'})
+        result['Net_Value'] = result['Value_C'] + result['Value_V']
+        result = result.sort_index(ascending=False).head(limit)
+        result_type = "aggregated_by_month"
+        
+    elif aggregation == "top_buys":
+        result = filtered[filtered['Value_C'] > 0].nlargest(limit, 'Value_C')[
+            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_C', 'is_sp500']
+        ]
+        result_type = "top_buys"
+        
+    elif aggregation == "top_sells":
+        result = filtered[filtered['Value_V'] < 0].nsmallest(limit, 'Value_V')[
+            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_V', 'is_sp500']
+        ]
+        result_type = "top_sells"
+    
+    elif aggregation == "recent":
+        result = filtered.sort_values('Trade Date', ascending=False).head(limit)[
+            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
+        ]
+        result_type = "recent"
+        
+    elif aggregation == "summary":
+        # Resumen general
+        total_buys = filtered['Value_C'].sum()
+        total_sells = filtered['Value_V'].sum()
+        num_transactions = len(filtered)
+        unique_companies = filtered['Symbol'].nunique()
+        unique_insiders = filtered['Insider Name'].nunique()
+        sp500_count = filtered[filtered['is_sp500'] == True]['Symbol'].nunique()
+        non_sp500_count = filtered[filtered['is_sp500'] == False]['Symbol'].nunique()
+        
+        top_buyers = filtered.groupby('Symbol')['Value_C'].sum().nlargest(5)
+        top_sellers = filtered.groupby('Symbol')['Value_V'].sum().nsmallest(5)
+        
+        # Top insiders compradores
+        top_insider_buyers = filtered.groupby('Insider Name')['Value_C'].sum().nlargest(5)
+        
+        result = {
+            'total_buys': total_buys,
+            'total_sells': total_sells,
+            'net_flow': total_buys + total_sells,
+            'num_transactions': num_transactions,
+            'unique_companies': unique_companies,
+            'unique_insiders': unique_insiders,
+            'sp500_companies': sp500_count,
+            'non_sp500_companies': non_sp500_count,
+            'top_buyers': top_buyers.to_dict(),
+            'top_sellers': top_sellers.to_dict(),
+            'top_insider_buyers': top_insider_buyers.to_dict()
+        }
+        result_type = "summary"
+        
+    else:
+        # Sin agregación - devolver transacciones individuales
+        sort_by = params.get("sort_by", "date")
+        if sort_by == "value":
+            result = filtered.nlargest(limit, 'Value_C')[
+                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
+            ]
+        elif sort_by == "quantity":
+            result = filtered.nlargest(limit, 'Qty')[
+                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
+            ]
+        else:
+            result = filtered.sort_values('Trade Date', ascending=False).head(limit)[
+                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
+            ]
+        result_type = "transactions"
+    
+    return {
+        "data": result,
+        "params": params,
+        "total_rows": len(filtered),
+        "result_type": result_type
+    }
+
+
+def generate_insider_response(query: str, search_result: dict, client) -> tuple[str, list, str]:
+    """Genera respuesta analítica sobre datos de insider trading (764K+ transacciones)"""
+    
+    result_type = search_result['result_type']
+    data = search_result['data']
+    total_rows = search_result['total_rows']
+    
+    # Formatear datos para el contexto
+    if result_type == "summary":
+        data_context = f"""RESUMEN DE INSIDER TRADING:
+- Total compras: ${data['total_buys']:,.0f}
+- Total ventas: ${data['total_sells']:,.0f}
+- Flujo neto: ${data['net_flow']:,.0f}
+- Número de transacciones: {data['num_transactions']:,}
+- Empresas únicas: {data['unique_companies']}
+- Insiders únicos: {data['unique_insiders']}
+- Empresas S&P 500: {data.get('sp500_companies', 'N/A')}
+- Empresas fuera S&P 500: {data.get('non_sp500_companies', 'N/A')}
+
+TOP 5 EMPRESAS CON MÁS COMPRAS (por valor):
+{json.dumps(data['top_buyers'], indent=2)}
+
+TOP 5 EMPRESAS CON MÁS VENTAS (por valor):
+{json.dumps(data['top_sellers'], indent=2)}
+
+TOP 5 INSIDERS COMPRADORES:
+{json.dumps(data.get('top_insider_buyers', {}), indent=2)}"""
+    elif isinstance(data, pd.DataFrame):
+        if len(data) > 30:
+            data_context = data.head(30).to_string()
+            data_context += f"\n\n... y {len(data) - 30} registros más"
+        else:
+            data_context = data.to_string()
+    else:
+        data_context = str(data)
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Eres un analista experto en insider trading con acceso a más de 764,000 transacciones del mercado estadounidense.
+
+INSTRUCCIONES:
+1. Analiza los datos proporcionados y responde la pregunta de forma clara y estructurada
+2. Usa formato de moneda apropiado (millones con M, miles con K)
+3. Destaca patrones importantes:
+   - Concentración de compras/ventas en empresas específicas
+   - Insiders notables (CEOs, CFOs) y sus movimientos
+   - Diferencias entre S&P 500 y empresas menores si es relevante
+   - Tendencias temporales si son visibles
+4. Si hay señales significativas (compras grandes de insiders son generalmente más informativas que ventas), menciónalas
+5. Responde en español
+6. Sé directo y analítico, no repitas los datos literalmente
+7. Máximo 400 palabras
+8. NO inventes datos que no estén en el contexto
+
+CONTEXTO IMPORTANTE:
+- Value_C = Valor de compras (positivo)
+- Value_V = Valor de ventas (negativo)
+- is_sp500 = True si la empresa está en el S&P 500
+- Las ventas de insiders son comunes (compensación, diversificación)
+- Las compras de insiders suelen ser más significativas (usan su propio dinero)
+- Datos desde 2022 hasta 2025"""
+                },
+                {
+                    "role": "user",
+                    "content": f"""DATOS DE INSIDER TRADING:
+{data_context}
+
+Total de transacciones en el filtro: {total_rows:,}
+Tipo de resultado: {result_type}
+
+PREGUNTA: {query}"""
+                }
+            ],
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        answer = response.choices[0].message.content
+        
+        # Preparar fuentes para mostrar
+        if isinstance(data, pd.DataFrame) and 'Symbol' in data.columns:
+            symbols = data['Symbol'].unique().tolist()[:8]
+        elif isinstance(data, pd.DataFrame) and data.index.names[0] == 'Symbol':
+            symbols = data.index.get_level_values(0).unique().tolist()[:8]
+        elif result_type == "summary":
+            symbols = list(data['top_buyers'].keys())[:4] + list(data['top_sellers'].keys())[:4]
+        else:
+            symbols = []
+        
+        sources = [{
+            "type": "insider",
+            "symbols": symbols,
+            "count": total_rows,
+            "result_type": result_type
+        }]
+        
+        confidence = "high" if total_rows > 0 else "none"
+        
+        return answer, sources, confidence
+        
+    except Exception as e:
+        return f"Error generando respuesta: {e}", [], "error"
+
+
+# ============================================
+# CONGRESS TRADING - PARAMETER EXTRACTION
+# ============================================
+def extract_congress_params(query: str, client) -> dict:
+    """Extrae parámetros estructurados de la consulta para filtrar datos del Congreso"""
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Extrae parámetros de búsqueda de la consulta sobre trading del Congreso US.
+Responde SOLO con JSON válido, sin texto adicional:
+
+{
+    "symbols": ["AAPL", "MSFT"] o null,
+    "politicians": ["Nancy Pelosi", "Dan Crenshaw"] o null,
+    "party": "D" o "R" o null,
+    "chamber": "House" o "Senate" o null,
+    "action": "buy" o "sell" o null,
+    "industry": "Technology" o "Health Care" o null,
+    "year": 2024 o null,
+    "quarter": 1 o 2 o 3 o 4 o null,
+    "min_amount": 50000 o null,
+    "aggregation": "by_politician" o "by_party" o "by_symbol" o "by_industry" o "top_buys" o "top_sells" o "summary" o "recent" o null,
+    "limit": 10,
+    "sort_by": "amount" o "date" o "gain_loss" o null
+}
+
+Ejemplos:
+- "¿Qué compró Nancy Pelosi?" → {"politicians": ["Pelosi"], "action": "buy"}
+- "Trading de republicanos en 2024" → {"party": "R", "year": 2024, "aggregation": "summary"}
+- "¿Qué senadores compraron Apple?" → {"symbols": ["AAPL"], "chamber": "Senate", "action": "buy"}
+- "Mayores compras del Congreso" → {"action": "buy", "aggregation": "top_buys", "limit": 10}
+- "Demócratas vs Republicanos" → {"aggregation": "by_party"}
+- "¿Qué políticos invierten en tecnología?" → {"industry": "Information Technology", "aggregation": "by_politician"}
+- "Transacciones recientes del Congreso" → {"aggregation": "recent", "limit": 20}
+- "¿Quién ganó más dinero?" → {"aggregation": "by_politician", "sort_by": "gain_loss"}
+- "Compras mayores a $100,000" → {"action": "buy", "min_amount": 100000}"""
+                },
+                {"role": "user", "content": query}
+            ],
+            temperature=0,
+            max_tokens=300
+        )
+        
+        content = response.choices[0].message.content.strip()
+        content = re.sub(r'^```json\s*', '', content)
+        content = re.sub(r'\s*```$', '', content)
+        content = re.sub(r'^```\s*', '', content)
+        
+        params = json.loads(content)
+        return params
+    except Exception as e:
+        return {"limit": 20, "aggregation": "summary"}
+
+
+# ============================================
+# CONGRESS TRADING - SEARCH
+# ============================================
+def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
+    """Busca y filtra datos de trading del Congreso (173K+ transacciones)"""
+    
+    params = extract_congress_params(query, client)
+    filtered = df.copy()
+    
+    # Filtrar por símbolos
+    if params.get("symbols"):
+        symbols = [s.upper() for s in params["symbols"]]
+        filtered = filtered[filtered['Symbol'].isin(symbols)]
+    
+    # Filtrar por político
+    if params.get("politicians"):
+        pattern = '|'.join(params["politicians"])
+        filtered = filtered[filtered['Politician'].str.contains(pattern, case=False, na=False)]
+    
+    # Filtrar por partido
+    if params.get("party"):
+        filtered = filtered[filtered['Party'] == params["party"]]
+    
+    # Filtrar por cámara
+    if params.get("chamber"):
+        filtered = filtered[filtered['Chamber'] == params["chamber"]]
+    
+    # Filtrar por acción (compra/venta)
+    if params.get("action") == "buy":
+        filtered = filtered[filtered['Action'].str.contains('Purchase', case=False, na=False)]
+    elif params.get("action") == "sell":
+        filtered = filtered[filtered['Action'].str.contains('Sale', case=False, na=False)]
+    
+    # Filtrar por industria
+    if params.get("industry"):
+        filtered = filtered[filtered['Industry'].str.contains(params["industry"], case=False, na=False)]
+    
+    # Filtrar por año
+    if params.get("year"):
+        filtered = filtered[filtered['year'] == params["year"]]
+    
+    # Filtrar por trimestre
+    if params.get("quarter"):
+        filtered = filtered[filtered['quarter'] == params["quarter"]]
+    
+    # Filtrar por monto mínimo
+    if params.get("min_amount"):
+        filtered = filtered[filtered['Amount'] >= params["min_amount"]]
+    
+    limit = params.get("limit", 20)
+    aggregation = params.get("aggregation")
+    
+    # Realizar agregación según tipo
+    if aggregation == "by_politician":
+        result = filtered.groupby('Politician').agg({
+            'Amount': 'sum',
+            'Gain/Loss': 'mean',
+            'Symbol': 'count',
+            'Party': 'first',
+            'Chamber': 'first'
+        }).rename(columns={'Symbol': 'Num_Trades', 'Gain/Loss': 'Avg_Gain_Loss'})
+        result = result.sort_values('Amount', ascending=False).head(limit)
+        result_type = "aggregated_by_politician"
+        
+    elif aggregation == "by_party":
+        result = filtered.groupby('Party').agg({
+            'Amount': 'sum',
+            'Gain/Loss': 'mean',
+            'Symbol': 'count',
+            'Politician': 'nunique'
+        }).rename(columns={'Symbol': 'Num_Trades', 'Politician': 'Num_Politicians', 'Gain/Loss': 'Avg_Gain_Loss'})
+        result_type = "aggregated_by_party"
+        
+    elif aggregation == "by_symbol":
+        result = filtered.groupby('Symbol').agg({
+            'Amount': 'sum',
+            'Gain/Loss': 'mean',
+            'Politician': 'count',
+            'Industry': 'first'
+        }).rename(columns={'Politician': 'Num_Trades', 'Gain/Loss': 'Avg_Gain_Loss'})
+        result = result.sort_values('Amount', ascending=False).head(limit)
+        result_type = "aggregated_by_symbol"
+        
+    elif aggregation == "by_industry":
+        result = filtered.groupby('Industry').agg({
+            'Amount': 'sum',
+            'Gain/Loss': 'mean',
+            'Symbol': 'nunique',
+            'Politician': 'count'
+        }).rename(columns={'Symbol': 'Unique_Stocks', 'Politician': 'Num_Trades', 'Gain/Loss': 'Avg_Gain_Loss'})
+        result = result.sort_values('Amount', ascending=False).head(limit)
+        result_type = "aggregated_by_industry"
+        
+    elif aggregation == "top_buys":
+        buys = filtered[filtered['Action'].str.contains('Purchase', case=False, na=False)]
+        result = buys.nlargest(limit, 'Amount')[
+            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+        ]
+        result_type = "top_buys"
+        
+    elif aggregation == "top_sells":
+        sells = filtered[filtered['Action'].str.contains('Sale', case=False, na=False)]
+        result = sells.nlargest(limit, 'Amount')[
+            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+        ]
+        result_type = "top_sells"
+    
+    elif aggregation == "recent":
+        result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
+            ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Industry']
+        ]
+        result_type = "recent"
+        
+    elif aggregation == "summary":
+        # Resumen general
+        total_buys = filtered[filtered['Action'].str.contains('Purchase', case=False, na=False)]['Amount'].sum()
+        total_sells = filtered[filtered['Action'].str.contains('Sale', case=False, na=False)]['Amount'].sum()
+        num_transactions = len(filtered)
+        unique_politicians = filtered['Politician'].nunique()
+        unique_symbols = filtered['Symbol'].nunique()
+        
+        by_party = filtered.groupby('Party')['Amount'].sum().to_dict()
+        by_chamber = filtered.groupby('Chamber')['Amount'].sum().to_dict()
+        
+        top_politicians = filtered.groupby('Politician')['Amount'].sum().nlargest(5).to_dict()
+        top_stocks = filtered.groupby('Symbol')['Amount'].sum().nlargest(5).to_dict()
+        top_industries = filtered.groupby('Industry')['Amount'].sum().nlargest(5).to_dict()
+        
+        avg_gain_loss = filtered['Gain/Loss'].mean()
+        
+        result = {
+            'total_buys': total_buys,
+            'total_sells': total_sells,
+            'num_transactions': num_transactions,
+            'unique_politicians': unique_politicians,
+            'unique_symbols': unique_symbols,
+            'by_party': by_party,
+            'by_chamber': by_chamber,
+            'top_politicians': top_politicians,
+            'top_stocks': top_stocks,
+            'top_industries': top_industries,
+            'avg_gain_loss': avg_gain_loss
+        }
+        result_type = "summary"
+        
+    else:
+        # Sin agregación - devolver transacciones individuales
+        sort_by = params.get("sort_by", "date")
+        if sort_by == "amount":
+            result = filtered.nlargest(limit, 'Amount')[
+                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+            ]
+        elif sort_by == "gain_loss":
+            result = filtered.nlargest(limit, 'Gain/Loss')[
+                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+            ]
+        else:
+            result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
+                ['Filed Date', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
+            ]
+        result_type = "transactions"
+    
+    return {
+        "data": result,
+        "params": params,
+        "total_rows": len(filtered),
+        "result_type": result_type
+    }
+
+
+# ============================================
+# CONGRESS TRADING - RESPONSE GENERATION
+# ============================================
+def generate_congress_response(query: str, search_result: dict, client) -> tuple[str, list, str]:
+    """Genera respuesta analítica sobre trading del Congreso (173K+ transacciones)"""
+    
+    result_type = search_result['result_type']
+    data = search_result['data']
+    total_rows = search_result['total_rows']
+    
+    # Formatear datos para el contexto
+    if result_type == "summary":
+        data_context = f"""RESUMEN DE TRADING DEL CONGRESO:
+- Total compras: ${data['total_buys']:,.0f}
+- Total ventas: ${data['total_sells']:,.0f}
+- Número de transacciones: {data['num_transactions']:,}
+- Políticos únicos: {data['unique_politicians']}
+- Acciones únicas: {data['unique_symbols']}
+- Ganancia/Pérdida promedio: {data['avg_gain_loss']:.2f}%
+
+POR PARTIDO:
+{json.dumps(data['by_party'], indent=2)}
+
+POR CÁMARA:
+{json.dumps(data['by_chamber'], indent=2)}
+
+TOP 5 POLÍTICOS (por volumen):
+{json.dumps(data['top_politicians'], indent=2)}
+
+TOP 5 ACCIONES MÁS OPERADAS:
+{json.dumps(data['top_stocks'], indent=2)}
+
+TOP 5 INDUSTRIAS:
+{json.dumps(data['top_industries'], indent=2)}"""
+    elif isinstance(data, pd.DataFrame):
+        if len(data) > 30:
+            data_context = data.head(30).to_string()
+            data_context += f"\n\n... y {len(data) - 30} registros más"
+        else:
+            data_context = data.to_string()
+    else:
+        data_context = str(data)
+    
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Eres un analista experto en trading de políticos del Congreso de Estados Unidos.
+
+INSTRUCCIONES:
+1. Analiza los datos proporcionados y responde de forma clara y estructurada
+2. Usa formato de moneda apropiado (millones con M, miles con K)
+3. Destaca patrones importantes:
+   - Diferencias entre partidos (D=Demócrata, R=Republicano)
+   - Diferencias entre cámaras (House=Representantes, Senate=Senado)
+   - Políticos más activos y sus sectores preferidos
+   - Rendimiento (Gain/Loss) de las operaciones
+4. Sé objetivo y neutral políticamente
+5. Responde en español
+6. Máximo 400 palabras
+7. NO inventes datos que no estén en el contexto
+
+CONTEXTO IMPORTANTE:
+- Amount = Valor estimado de la transacción (punto medio del rango reportado)
+- Gain/Loss = Rendimiento porcentual de la operación (si está disponible)
+- Los políticos deben reportar transacciones pero con rangos, no valores exactos
+- Datos desde 2014 hasta 2025"""
+                },
+                {
+                    "role": "user",
+                    "content": f"""DATOS DE TRADING DEL CONGRESO:
+{data_context}
+
+Total de transacciones en el filtro: {total_rows:,}
+Tipo de resultado: {result_type}
+
+PREGUNTA: {query}"""
+                }
+            ],
+            temperature=0.3,
+            max_tokens=800
+        )
+        
+        answer = response.choices[0].message.content
+        
+        # Preparar fuentes para mostrar
+        if isinstance(data, pd.DataFrame):
+            if 'Symbol' in data.columns:
+                symbols = data['Symbol'].unique().tolist()[:6]
+            elif 'Politician' in data.columns:
+                symbols = data['Politician'].unique().tolist()[:6]
+            else:
+                symbols = []
+            
+            if 'Party' in data.columns:
+                parties = data['Party'].unique().tolist()
+            else:
+                parties = []
+        elif result_type == "summary":
+            symbols = list(data['top_stocks'].keys())[:6]
+            parties = list(data['by_party'].keys())
+        else:
+            symbols = []
+            parties = []
+        
+        sources = [{
+            "type": "congress",
+            "symbols": symbols,
+            "parties": parties,
+            "count": total_rows,
+            "result_type": result_type
+        }]
+        
+        confidence = "high" if total_rows > 0 else "none"
+        
+        return answer, sources, confidence
+        
+    except Exception as e:
+        return f"Error generando respuesta: {e}", [], "error"
+
+
+# ============================================
+# BUFFETT LETTERS - QUERY ENHANCEMENT
 # ============================================
 def enhance_query(query: str, client) -> str:
     """Traduce y expande la query a inglés"""
@@ -370,23 +1217,20 @@ Examples:
         return enhanced if enhanced else query
     except Exception as e:
         if "rate" in str(e).lower():
-            raise e  # Propagar para manejar arriba
+            raise e
         return query
 
 
 # ============================================
-# RESOLVE FOLLOW-UP QUERY
+# BUFFETT - RESOLVE FOLLOW-UP QUERY
 # ============================================
 def resolve_followup(query: str, conversation_history: list, client) -> str:
     """
     Resuelve referencias anafóricas en preguntas de seguimiento.
-    "¿Y qué más dijo sobre eso?" → "¿Qué más dijo sobre la diversificación?"
     """
-    # Si no hay historial o la query es completa, devolverla tal cual
     if not conversation_history or len(conversation_history) < 2:
         return query
     
-    # Detectar si es un follow-up (pregunta corta con pronombres/referencias)
     followup_indicators = [
         r'\beso\b', r'\beste tema\b', r'\bal respecto\b', r'\bsobre eso\b',
         r'\by qué\b', r'\bpor qué\b.*\?$', r'\bcuándo\b', r'\bdónde\b',
@@ -401,11 +1245,10 @@ def resolve_followup(query: str, conversation_history: list, client) -> str:
     if not (is_followup or is_short):
         return query
     
-    # Obtener contexto de la conversación reciente
     recent_context = []
-    for msg in conversation_history[-4:]:  # Últimos 2 intercambios
+    for msg in conversation_history[-4:]:
         role = "Usuario" if msg["role"] == "user" else "Asistente"
-        content = msg["content"][:300]  # Truncar para no exceder contexto
+        content = msg["content"][:300]
         recent_context.append(f"{role}: {content}")
     
     context_str = "\n".join(recent_context)
@@ -422,14 +1265,7 @@ Si la pregunta actual hace referencia a temas de la conversación anterior (usan
 
 Si la pregunta ya es clara y autocontenida, devuélvela sin cambios.
 
-Responde SOLO con la pregunta reformulada, nada más.
-
-Ejemplos:
-- Contexto: hablando de diversificación → "¿Y qué más dijo?" → "¿Qué más dijo Buffett sobre la diversificación?"
-- Contexto: hablando del oro → "¿Desde cuándo piensa así?" → "¿Desde cuándo piensa Buffett que el oro no es buena inversión?"
-- Contexto: hablando de See's → "¿Cuánto pagó?" → "¿Cuánto pagó Buffett por See's Candies?"
-- Sin contexto relevante → "¿Qué opina del oro?" → "¿Qué opina del oro?" (sin cambios)
-"""
+Responde SOLO con la pregunta reformulada, nada más."""
                 },
                 {
                     "role": "user", 
@@ -446,7 +1282,7 @@ Ejemplos:
 
 
 # ============================================
-# HYBRID SEARCH (BM25 + EMBEDDINGS)
+# BUFFETT - HYBRID SEARCH (BM25 + EMBEDDINGS)
 # ============================================
 def hybrid_search(
     query: str, 
@@ -460,15 +1296,11 @@ def hybrid_search(
 ) -> list[dict]:
     """
     Búsqueda híbrida combinando embeddings y BM25.
-    - Embeddings: bueno para semántica y sinónimos
-    - BM25: bueno para nombres propios y términos exactos
     """
     
-    # Extraer año si se menciona
     year_match = re.search(r'\b(19[7-9]\d|20[0-2]\d)\b', query)
     year_filter = year_match.group(1) if year_match else None
     
-    # Detectar si es año + concepto
     query_without_year = re.sub(r'\b(19[7-9]\d|20[0-2]\d)\b', '', query).strip()
     is_year_plus_concept = year_filter and len(query_without_year.split()) > 3
     
@@ -478,30 +1310,25 @@ def hybrid_search(
     else:
         valid_years = {year_filter} if year_filter else None
     
-    # 1. Búsqueda semántica
     enhanced_query = enhance_query(query, client)
     q_emb = model.encode([enhanced_query], normalize_embeddings=True, convert_to_numpy=True)
     
-    retrieve_k = 30  # Recuperar más para luego combinar
+    retrieve_k = 30
     sem_scores, sem_indices = index.search(q_emb.astype('float32'), min(retrieve_k, len(chunks)))
     
-    # Normalizar scores semánticos a [0, 1]
     sem_results = {}
     max_sem = max(sem_scores[0]) if sem_scores[0].max() > 0 else 1
     for score, idx in zip(sem_scores[0], sem_indices[0]):
         if idx >= 0:
             sem_results[idx] = score / max_sem
     
-    # 2. Búsqueda BM25
     bm25_results_raw = bm25.search(enhanced_query, top_k=retrieve_k)
     
-    # Normalizar scores BM25 a [0, 1]
     bm25_results = {}
     max_bm25 = bm25_results_raw[0][1] if bm25_results_raw else 1
     for idx, score in bm25_results_raw:
         bm25_results[idx] = score / max_bm25 if max_bm25 > 0 else 0
     
-    # 3. Combinar scores (Reciprocal Rank Fusion alternativo: weighted sum)
     all_indices = set(sem_results.keys()) | set(bm25_results.keys())
     combined_scores = {}
     
@@ -510,7 +1337,6 @@ def hybrid_search(
         bm25_score = bm25_results.get(idx, 0)
         combined_scores[idx] = (semantic_weight * sem_score) + ((1 - semantic_weight) * bm25_score)
     
-    # 4. Ordenar y filtrar
     sorted_indices = sorted(combined_scores.keys(), key=lambda x: -combined_scores[x])
     
     results = []
@@ -520,24 +1346,22 @@ def hybrid_search(
         chunk['sem_score'] = sem_results.get(idx, 0)
         chunk['bm25_score'] = bm25_results.get(idx, 0)
         
-        # Filtrar por años válidos
         if valid_years and chunk['year'] not in valid_years:
             continue
         
-        # Diversificar: máximo 3 chunks por año
         year_count = sum(1 for r in results if r['year'] == chunk['year'])
         if year_count >= 3:
             continue
         
         results.append(chunk)
-        if len(results) >= top_k * 2:  # Recuperar más para reranking
+        if len(results) >= top_k * 2:
             break
     
     return results
 
 
 # ============================================
-# RERANKING WITH LLM
+# BUFFETT - RERANKING WITH LLM
 # ============================================
 def rerank_with_llm(query: str, chunks: list[dict], client, top_k: int = 8) -> list[dict]:
     """
@@ -546,9 +1370,8 @@ def rerank_with_llm(query: str, chunks: list[dict], client, top_k: int = 8) -> l
     if len(chunks) <= top_k:
         return chunks
     
-    # Preparar chunks para evaluación
     chunk_summaries = []
-    for i, chunk in enumerate(chunks[:16]):  # Máximo 16 para no exceder contexto
+    for i, chunk in enumerate(chunks[:16]):
         preview = chunk['text'][:400].replace('\n', ' ')
         chunk_summaries.append(f"[{i}] ({chunk['year']}): {preview}...")
     
@@ -582,11 +1405,9 @@ Criterios de relevancia:
             max_tokens=50
         )
         
-        # Parsear respuesta
         ranking_str = response.choices[0].message.content.strip()
         ranking = [int(x.strip()) for x in re.findall(r'\d+', ranking_str)]
         
-        # Reordenar chunks según ranking
         reranked = []
         seen = set()
         for idx in ranking:
@@ -594,7 +1415,6 @@ Criterios de relevancia:
                 reranked.append(chunks[idx])
                 seen.add(idx)
         
-        # Añadir cualquier chunk faltante al final
         for i, chunk in enumerate(chunks):
             if i not in seen and len(reranked) < top_k:
                 reranked.append(chunk)
@@ -602,12 +1422,11 @@ Criterios de relevancia:
         return reranked[:top_k]
     
     except:
-        # Si falla, devolver los primeros top_k
         return chunks[:top_k]
 
 
 # ============================================
-# CONFIDENCE DETECTION
+# BUFFETT - CONFIDENCE DETECTION
 # ============================================
 def calculate_confidence(results: list[dict], query: str) -> tuple[str, float]:
     """Calcula nivel de confianza"""
@@ -627,9 +1446,9 @@ def calculate_confidence(results: list[dict], query: str) -> tuple[str, float]:
 
 
 # ============================================
-# GENERATE RESPONSE WITH QUOTES
+# BUFFETT - GENERATE RESPONSE WITH QUOTES
 # ============================================
-def generate_response(
+def generate_buffett_response(
     query: str, 
     results: list[dict], 
     client,
@@ -704,7 +1523,7 @@ FORMATO DE CITAS:
         return resp.choices[0].message.content, results, confidence_level
     except Exception as e:
         if "rate" in str(e).lower() or "limit" in str(e).lower():
-            raise e  # Propagar para manejar en search_and_generate
+            raise e
         return f"Error: {e}", [], "error"
 
 
@@ -718,106 +1537,226 @@ def search_and_generate(
     model,
     bm25: BM25,
     client,
+    insider_df: pd.DataFrame,
+    congress_df: pd.DataFrame,
     conversation_history: list = None
-) -> tuple[str, list, str]:
+) -> tuple[str, list, str, str]:
     """
-    Pipeline completo:
-    1. Resolver follow-ups
-    2. Búsqueda híbrida
-    3. Reranking
-    4. Generación con citas
+    Pipeline completo con routing:
+    1. Detectar tipo de consulta (Buffett vs Insider vs Congress)
+    2. Routing a pipeline apropiado
+    3. Generación de respuesta
+    
+    Returns: (response, sources, confidence, data_type)
     """
     
     try:
-        # 1. Resolver referencias anafóricas
-        resolved_query = resolve_followup(query, conversation_history or [], client)
+        # 1. Detectar tipo de consulta
+        data_type = route_query(query, client)
         
-        # 2. Búsqueda híbrida
-        candidates = hybrid_search(resolved_query, index, chunks, model, bm25, client, top_k=16)
+        if data_type == "CONGRESS" and congress_df is not None:
+            # Pipeline de Congress Trading
+            search_result = search_congress_data(query, congress_df, client)
+            response, sources, confidence = generate_congress_response(query, search_result, client)
+            return response, sources, confidence, "CONGRESS"
         
-        # 3. Reranking con LLM
-        if len(candidates) > 8:
-            reranked = rerank_with_llm(resolved_query, candidates, client, top_k=8)
+        elif data_type == "INSIDER" and insider_df is not None:
+            # Pipeline de Insider Trading
+            search_result = search_insider_data(query, insider_df, client)
+            response, sources, confidence = generate_insider_response(query, search_result, client)
+            return response, sources, confidence, "INSIDER"
+        
         else:
-            reranked = candidates
-        
-        # 4. Generar respuesta
-        response, used_chunks, confidence = generate_response(
-            resolved_query, 
-            reranked, 
-            client,
-            conversation_history
-        )
-        
-        return response, used_chunks, confidence
+            # Pipeline de Buffett Letters
+            resolved_query = resolve_followup(query, conversation_history or [], client)
+            
+            candidates = hybrid_search(resolved_query, index, chunks, model, bm25, client, top_k=16)
+            
+            if len(candidates) > 8:
+                reranked = rerank_with_llm(resolved_query, candidates, client, top_k=8)
+            else:
+                reranked = candidates
+            
+            response, used_chunks, confidence = generate_buffett_response(
+                resolved_query, 
+                reranked, 
+                client,
+                conversation_history
+            )
+            
+            return response, used_chunks, confidence, "BUFFETT"
     
     except Exception as e:
         if "rate" in str(e).lower() or "limit" in str(e).lower():
-            return "⏳ Demasiadas consultas. Intenta en unos segundos.", [], "error"
-        return f"Error: {str(e)}", [], "error"
+            return "⏳ Demasiadas consultas. Intenta en unos segundos.", [], "error", "ERROR"
+        return f"Error: {str(e)}", [], "error", "ERROR"
 
 
 # ============================================
 # UI HELPERS
 # ============================================
-def show_sources(results: list, confidence: str = "high"):
-    if not results:
-        return
+def show_sources(results: list, confidence: str = "high", data_type: str = "BUFFETT"):
+    """Muestra las fuentes según el tipo de datos"""
     
-    confidence_indicators = {
-        "high": ("🟢", "Alta relevancia"),
-        "medium": ("🟡", "Relevancia media"),
-        "low": ("🟠", "Baja relevancia"),
-        "none": ("🔴", "Sin resultados"),
-        "error": ("❌", "Error")
-    }
-    indicator, label = confidence_indicators.get(confidence, ("⚪", ""))
+    if data_type == "CONGRESS":
+        # Fuentes de Congress trading
+        if not results:
+            return
+        
+        source = results[0] if results else {}
+        symbols = source.get("symbols", [])
+        parties = source.get("parties", [])
+        count = source.get("count", 0)
+        result_type = source.get("result_type", "")
+        
+        # Pills para símbolos o políticos
+        pills = ''.join([f'<span class="src congress"><b>{s}</b></span>' for s in symbols[:6]])
+        
+        # Pills para partidos
+        party_pills = ''
+        for p in parties:
+            if p == 'D':
+                party_pills += '<span class="src democrat"><b>Demócratas</b></span>'
+            elif p == 'R':
+                party_pills += '<span class="src republican"><b>Republicanos</b></span>'
+        
+        type_labels = {
+            "summary": "📊 Resumen",
+            "top_buys": "🟢 Top Compras",
+            "top_sells": "🔴 Top Ventas",
+            "aggregated_by_politician": "👤 Por Político",
+            "aggregated_by_party": "🏛️ Por Partido",
+            "aggregated_by_symbol": "📈 Por Acción",
+            "aggregated_by_industry": "🏭 Por Industria",
+            "transactions": "📋 Transacciones",
+            "recent": "🕐 Recientes"
+        }
+        type_label = type_labels.get(result_type, "")
+        
+        st.markdown(f'''
+        <div class="sources">
+            {pills}
+            {party_pills}
+            <span class="src congress"><b>{count:,}</b> transacciones</span>
+            {f'<span class="src">{type_label}</span>' if type_label else ''}
+        </div>
+        ''', unsafe_allow_html=True)
     
-    years = sorted(set(r["year"] for r in results))
-    pills = ''.join([f'<span class="src"><b>{y}</b></span>' for y in years])
+    elif data_type == "INSIDER":
+        # Fuentes de insider trading
+        if not results:
+            return
+        
+        source = results[0] if results else {}
+        symbols = source.get("symbols", [])
+        count = source.get("count", 0)
+        result_type = source.get("result_type", "")
+        
+        pills = ''.join([f'<span class="src insider"><b>{s}</b></span>' for s in symbols[:8]])
+        
+        type_labels = {
+            "summary": "📊 Resumen",
+            "top_buys": "🟢 Top Compras",
+            "top_sells": "🔴 Top Ventas",
+            "aggregated_by_company": "📈 Por Empresa",
+            "aggregated_by_insider": "👤 Por Insider",
+            "aggregated_by_month": "📅 Por Mes",
+            "transactions": "📋 Transacciones",
+            "recent": "🕐 Recientes"
+        }
+        type_label = type_labels.get(result_type, "")
+        
+        st.markdown(f'''
+        <div class="sources">
+            {pills}
+            <span class="src insider"><b>{count:,}</b> transacciones</span>
+            {f'<span class="src">{type_label}</span>' if type_label else ''}
+        </div>
+        ''', unsafe_allow_html=True)
     
-    confidence_html = ""
-    if confidence in ["low", "medium"]:
-        confidence_html = f'<span class="confidence {confidence}">{indicator} {label}</span>'
-    
-    st.markdown(f'''
-    <div class="sources">
-        {pills}
-        {confidence_html}
-    </div>
-    ''', unsafe_allow_html=True)
+    else:
+        # Fuentes de Buffett Letters (original)
+        if not results:
+            return
+        
+        confidence_indicators = {
+            "high": ("🟢", "Alta relevancia"),
+            "medium": ("🟡", "Relevancia media"),
+            "low": ("🟠", "Baja relevancia"),
+            "none": ("🔴", "Sin resultados"),
+            "error": ("❌", "Error")
+        }
+        indicator, label = confidence_indicators.get(confidence, ("⚪", ""))
+        
+        years = sorted(set(r["year"] for r in results))
+        pills = ''.join([f'<span class="src"><b>{y}</b></span>' for y in years])
+        
+        confidence_html = ""
+        if confidence in ["low", "medium"]:
+            confidence_html = f'<span class="confidence {confidence}">{indicator} {label}</span>'
+        
+        st.markdown(f'''
+        <div class="sources">
+            {pills}
+            {confidence_html}
+        </div>
+        ''', unsafe_allow_html=True)
+
+
+def get_data_badge(data_type: str) -> str:
+    """Retorna el badge HTML según el tipo de datos"""
+    if data_type == "CONGRESS":
+        return '<span class="data-badge congress">🏛️ Congress Trading</span>'
+    elif data_type == "INSIDER":
+        return '<span class="data-badge insider">📊 Insider Data</span>'
+    else:
+        return '<span class="data-badge buffett">📚 Buffett Letters</span>'
 
 
 # ============================================
 # MAIN
 # ============================================
 def main():
+    # Cargar recursos
     index = load_index()
     chunks = load_chunks()
     model = load_model()
     client = get_client()
+    insider_df = load_insider_data()
+    congress_df = load_congress_data()
     
-    if not index or not chunks:
-        st.error("⚠️ Ejecuta primero: `python build_index.py`")
+    # Verificar recursos mínimos
+    buffett_available = index is not None and chunks is not None
+    insider_available = insider_df is not None
+    congress_available = congress_df is not None
+    
+    if not buffett_available and not insider_available and not congress_available:
+        st.error("⚠️ No hay datos disponibles. Verifica los archivos de datos.")
         st.stop()
     
-    # Construir índice BM25
-    bm25 = build_bm25_index(chunks)
+    # Construir índice BM25 si hay chunks
+    bm25 = build_bm25_index(chunks) if chunks else None
     
+    # Estado de sesión
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "pending" not in st.session_state:
         st.session_state.pending = None
     
     # HEADER
-    st.markdown("""
+    insider_count = f"{len(insider_df):,}" if insider_df is not None else "0"
+    congress_count = f"{len(congress_df):,}" if congress_df is not None else "0"
+    buffett_count = "48 cartas" if buffett_available else "N/A"
+    
+    st.markdown(f"""
     <div class="header">
         <div class="logo">⚡ <span>BQuant</span>ChatBot</div>
-        <div class="tagline">Berkshire Letters AI</div>
+        <div class="tagline">Buffett · Insiders · Congress Trading AI</div>
         <div class="meta">
             <span><span class="meta-dot"></span>Online</span>
-            <span>📚 48 cartas</span>
-            <span>1977–2024</span>
+            <span>📚 {buffett_count}</span>
+            <span>📊 {insider_count} insiders</span>
+            <span>🏛️ {congress_count} congress</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -826,18 +1765,19 @@ def main():
     if not st.session_state.messages:
         st.markdown("""
         <div class="welcome">
-            <h1>Pregunta sobre las cartas<br/>de Warren Buffett</h1>
-            <p>47 años de filosofía inversora</p>
+            <h1>Pregunta sobre Buffett,<br/>Insiders o el Congreso</h1>
+            <p>Filosofía inversora + 764K insiders + 173K transacciones del Congreso US</p>
         </div>
         """, unsafe_allow_html=True)
         
+        # Sugerencias mixtas
         suggestions = [
-            ("Filosofía", "¿Cuál es la filosofía de inversión de Buffett?"),
-            ("Crisis 2008", "¿Qué dijo Buffett sobre la crisis de 2008?"),
-            ("Carta 1983", "Resume la carta de 1983"),
-            ("Oro", "¿Qué opina Buffett del oro?"),
-            ("Moats", "¿Qué son los moats?"),
-            ("Seguros", "¿Por qué son importantes los seguros para Berkshire?"),
+            ("📚 Filosofía", "¿Cuál es la filosofía de inversión de Buffett?"),
+            ("📊 Top Insiders", "¿Cuáles fueron las mayores compras de insiders en 2024?"),
+            ("🏛️ Pelosi", "¿Qué acciones ha comprado Nancy Pelosi?"),
+            ("📚 Moats", "¿Qué son los moats según Buffett?"),
+            ("📊 CEOs", "¿Qué CEOs compraron más acciones de sus empresas?"),
+            ("🏛️ Partidos", "Compara el trading de demócratas vs republicanos"),
         ]
         
         cols = st.columns(3)
@@ -853,46 +1793,51 @@ def main():
         st.session_state.pending = None
         st.session_state.messages.append({"role": "user", "content": q})
         
-        response, used, confidence = search_and_generate(
-            q, index, chunks, model, bm25, client,
+        response, used, confidence, data_type = search_and_generate(
+            q, index, chunks, model, bm25, client, insider_df, congress_df,
             st.session_state.messages
         )
         st.session_state.messages.append({
             "role": "assistant", 
             "content": response, 
             "sources": used,
-            "confidence": confidence
+            "confidence": confidence,
+            "data_type": data_type
         })
         st.rerun()
     
     # MESSAGES
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"], avatar="👤" if msg["role"] == "user" else "⚡"):
+            if msg["role"] == "assistant" and msg.get("data_type"):
+                st.markdown(get_data_badge(msg.get("data_type", "BUFFETT")), unsafe_allow_html=True)
             st.write(msg["content"])
             if msg.get("sources"):
-                show_sources(msg["sources"], msg.get("confidence", "high"))
+                show_sources(msg["sources"], msg.get("confidence", "high"), msg.get("data_type", "BUFFETT"))
     
     # INPUT
-    if prompt := st.chat_input("Pregunta sobre las cartas de Buffett..."):
+    if prompt := st.chat_input("Pregunta sobre Buffett, insiders o el Congreso..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         with st.chat_message("user", avatar="👤"):
             st.write(prompt)
         
         with st.chat_message("assistant", avatar="⚡"):
-            with st.spinner("Buscando..."):
-                response, used, confidence = search_and_generate(
-                    prompt, index, chunks, model, bm25, client,
+            with st.spinner("Analizando..."):
+                response, used, confidence, data_type = search_and_generate(
+                    prompt, index, chunks, model, bm25, client, insider_df, congress_df,
                     st.session_state.messages
                 )
+            st.markdown(get_data_badge(data_type), unsafe_allow_html=True)
             st.write(response)
-            show_sources(used, confidence)
+            show_sources(used, confidence, data_type)
         
         st.session_state.messages.append({
             "role": "assistant", 
             "content": response, 
             "sources": used,
-            "confidence": confidence
+            "confidence": confidence,
+            "data_type": data_type
         })
     
     # FOOTER

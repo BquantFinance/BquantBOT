@@ -1140,24 +1140,29 @@ PREGUNTA: {query}"""
         answer = response.choices[0].message.content
         
         # Preparar fuentes para mostrar
+        symbols = []
+        parties = []
+        
         if isinstance(data, pd.DataFrame):
+            # Check columns first
             if 'Symbol' in data.columns:
                 symbols = data['Symbol'].unique().tolist()[:6]
             elif 'Politician' in data.columns:
                 symbols = data['Politician'].unique().tolist()[:6]
-            else:
-                symbols = []
             
+            # Check for Party in columns or index
             if 'Party' in data.columns:
                 parties = data['Party'].unique().tolist()
-            else:
-                parties = []
+            elif data.index.name == 'Party' or (hasattr(data.index, 'names') and 'Party' in data.index.names):
+                parties = data.index.get_level_values('Party').unique().tolist() if hasattr(data.index, 'get_level_values') else data.index.unique().tolist()
+            
+            # If index is Party (for aggregated_by_party), get from index
+            if result_type == "aggregated_by_party":
+                parties = data.index.tolist()
+                
         elif result_type == "summary":
             symbols = list(data['top_stocks'].keys())[:6]
             parties = list(data['by_party'].keys())
-        else:
-            symbols = []
-            parties = []
         
         sources = [{
             "type": "congress",
@@ -1609,17 +1614,22 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
         count = source.get("count", 0)
         result_type = source.get("result_type", "")
         
-        # Pills para símbolos o políticos
-        pills = ''.join([f'<span class="src congress"><b>{s}</b></span>' for s in symbols[:6]])
+        # Build pills HTML
+        pills_list = []
+        for s in symbols[:6]:
+            pills_list.append(f'<span class="src congress"><b>{s}</b></span>')
         
-        # Pills para partidos
-        party_pills = ''
+        # Party pills
         for p in parties:
             if p == 'D':
-                party_pills += '<span class="src democrat"><b>Demócratas</b></span>'
+                pills_list.append('<span class="src democrat"><b>Demócratas</b></span>')
             elif p == 'R':
-                party_pills += '<span class="src republican"><b>Republicanos</b></span>'
+                pills_list.append('<span class="src republican"><b>Republicanos</b></span>')
         
+        # Count pill
+        pills_list.append(f'<span class="src congress"><b>{count:,}</b> txns</span>')
+        
+        # Type label
         type_labels = {
             "summary": "📊 Resumen",
             "top_buys": "🟢 Top Compras",
@@ -1631,16 +1641,11 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
             "transactions": "📋 Transacciones",
             "recent": "🕐 Recientes"
         }
-        type_label = type_labels.get(result_type, "")
+        if result_type in type_labels:
+            pills_list.append(f'<span class="src">{type_labels[result_type]}</span>')
         
-        st.markdown(f'''
-        <div class="sources">
-            {pills}
-            {party_pills}
-            <span class="src congress"><b>{count:,}</b> transacciones</span>
-            {f'<span class="src">{type_label}</span>' if type_label else ''}
-        </div>
-        ''', unsafe_allow_html=True)
+        pills_html = " ".join(pills_list)
+        st.markdown(f'<div class="sources">{pills_html}</div>', unsafe_allow_html=True)
     
     elif data_type == "INSIDER":
         # Fuentes de insider trading
@@ -1652,7 +1657,11 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
         count = source.get("count", 0)
         result_type = source.get("result_type", "")
         
-        pills = ''.join([f'<span class="src insider"><b>{s}</b></span>' for s in symbols[:8]])
+        pills_list = []
+        for s in symbols[:8]:
+            pills_list.append(f'<span class="src insider"><b>{s}</b></span>')
+        
+        pills_list.append(f'<span class="src insider"><b>{count:,}</b> txns</span>')
         
         type_labels = {
             "summary": "📊 Resumen",
@@ -1664,15 +1673,11 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
             "transactions": "📋 Transacciones",
             "recent": "🕐 Recientes"
         }
-        type_label = type_labels.get(result_type, "")
+        if result_type in type_labels:
+            pills_list.append(f'<span class="src">{type_labels[result_type]}</span>')
         
-        st.markdown(f'''
-        <div class="sources">
-            {pills}
-            <span class="src insider"><b>{count:,}</b> transacciones</span>
-            {f'<span class="src">{type_label}</span>' if type_label else ''}
-        </div>
-        ''', unsafe_allow_html=True)
+        pills_html = " ".join(pills_list)
+        st.markdown(f'<div class="sources">{pills_html}</div>', unsafe_allow_html=True)
     
     else:
         # Fuentes de Buffett Letters (original)
@@ -1689,18 +1694,13 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
         indicator, label = confidence_indicators.get(confidence, ("⚪", ""))
         
         years = sorted(set(r["year"] for r in results))
-        pills = ''.join([f'<span class="src"><b>{y}</b></span>' for y in years])
+        pills_list = [f'<span class="src"><b>{y}</b></span>' for y in years]
         
-        confidence_html = ""
         if confidence in ["low", "medium"]:
-            confidence_html = f'<span class="confidence {confidence}">{indicator} {label}</span>'
+            pills_list.append(f'<span class="confidence {confidence}">{indicator} {label}</span>')
         
-        st.markdown(f'''
-        <div class="sources">
-            {pills}
-            {confidence_html}
-        </div>
-        ''', unsafe_allow_html=True)
+        pills_html = " ".join(pills_list)
+        st.markdown(f'<div class="sources">{pills_html}</div>', unsafe_allow_html=True)
 
 
 def get_data_badge(data_type: str) -> str:

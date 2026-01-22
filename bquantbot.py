@@ -344,7 +344,7 @@ def load_insider_data():
 
 @st.cache_data
 def load_congress_data():
-    """Carga y preprocesa datos de trading del Congreso (173K+ transacciones)"""
+    """Carga y preprocesa datos de trading del Congreso (93K+ transacciones)"""
     try:
         df = pd.read_csv(CONGRESS_FILE)
         
@@ -361,9 +361,14 @@ def load_congress_data():
         df['month'] = df['Filed Date'].dt.month
         df['quarter'] = df['Filed Date'].dt.quarter
         
-        # Limpiar Party y Chamber
+        # Limpiar campos de texto
         df['Party'] = df['Party'].fillna('Unknown')
         df['Chamber'] = df['Chamber'].fillna('Unknown')
+        df['Company'] = df['Company'].fillna('')
+        df['Industry'] = df['Industry'].fillna('Unknown')
+        df['Security'] = df['Security'].fillna('Stock')
+        df['Amount Range'] = df['Amount Range'].fillna('')
+        df['Symbol'] = df['Symbol'].fillna('')
         
         return df
     except Exception as e:
@@ -442,7 +447,7 @@ def route_query(query: str, client) -> str:
     """
     Determina si la consulta es sobre:
     - INSIDER: datos de insider trading del mercado US (764K+ transacciones)
-    - CONGRESS: datos de trading del Congreso US (173K+ transacciones)
+    - CONGRESS: datos de trading del Congreso US (93K+ transacciones)
     - BUFFETT: cartas anuales de Warren Buffett
     """
     try:
@@ -516,7 +521,7 @@ Responde SOLO con JSON válido, sin texto adicional:
     "month": 1-12 o null,
     "min_value": 1000000 o null,
     "is_sp500": true o false o null,
-    "aggregation": "by_company" o "by_insider" o "by_month" o "top_buys" o "top_sells" o "summary" o "recent" o null,
+    "aggregation": "by_company" o "by_insider" o "by_month" o "by_year" o "top_buys" o "top_sells" o "summary" o "recent" o null,
     "limit": 10,
     "sort_by": "value" o "date" o "quantity" o null
 }
@@ -528,6 +533,8 @@ Ejemplos:
 - "Resumen de insider trading Q4 2024" → {"year": 2024, "quarter": 4, "aggregation": "summary"}
 - "CEOs que más compraron" → {"titles": ["CEO"], "trade_type": "buy", "aggregation": "by_insider", "sort_by": "value"}
 - "Compras mayores a 10 millones" → {"trade_type": "buy", "min_value": 10000000, "aggregation": "top_buys"}
+- "Evolución del insider trading por año" → {"aggregation": "by_year"}
+- "¿Cómo han cambiado las compras en AAPL?" → {"symbols": ["AAPL"], "aggregation": "by_year"}
 - "Insider trading en empresas del S&P 500" → {"is_sp500": true, "aggregation": "summary"}
 - "Transacciones recientes" → {"aggregation": "recent", "limit": 20}
 - "¿Qué pasó en noviembre 2024?" → {"year": 2024, "month": 11, "aggregation": "summary"}
@@ -625,8 +632,10 @@ def search_insider_data(query: str, df: pd.DataFrame, client) -> dict:
             'Value_V': 'sum',
             'Qty': 'sum',
             'Title': 'first',
-            'Trade Date': 'count'
-        }).rename(columns={'Trade Date': 'Num_Trades'})
+            'Trade Date': 'count',
+            'Price': 'mean',
+            'is_sp500': 'first'
+        }).rename(columns={'Trade Date': 'Num_Trades', 'Price': 'Avg_Price'})
         result['Net_Value'] = result['Value_C'] + result['Value_V']
         result = result.sort_values('Value_C', ascending=False).head(limit)
         result_type = "aggregated_by_insider"
@@ -642,22 +651,35 @@ def search_insider_data(query: str, df: pd.DataFrame, client) -> dict:
         result['Net_Value'] = result['Value_C'] + result['Value_V']
         result = result.sort_index(ascending=False).head(limit)
         result_type = "aggregated_by_month"
+    
+    elif aggregation == "by_year":
+        result = filtered.groupby('year').agg({
+            'Value_C': 'sum',
+            'Value_V': 'sum',
+            'Qty': 'sum',
+            'Symbol': 'nunique',
+            'Insider Name': 'nunique',
+            'Trade Date': 'count'
+        }).rename(columns={'Symbol': 'Unique_Companies', 'Insider Name': 'Unique_Insiders', 'Trade Date': 'Num_Trades'})
+        result['Net_Value'] = result['Value_C'] + result['Value_V']
+        result = result.sort_index(ascending=False).head(limit)
+        result_type = "aggregated_by_year"
         
     elif aggregation == "top_buys":
         result = filtered[filtered['Value_C'] > 0].nlargest(limit, 'Value_C')[
-            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_C', 'is_sp500']
+            ['Trade Date', 'year', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_C', 'ΔOwn', 'Owned', 'SeñalC', 'is_sp500']
         ]
         result_type = "top_buys"
         
     elif aggregation == "top_sells":
         result = filtered[filtered['Value_V'] < 0].nsmallest(limit, 'Value_V')[
-            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_V', 'is_sp500']
+            ['Trade Date', 'year', 'Symbol', 'Insider Name', 'Title', 'Price', 'Qty', 'Value_V', 'ΔOwn', 'Owned', 'SeñalV', 'is_sp500']
         ]
         result_type = "top_sells"
     
     elif aggregation == "recent":
         result = filtered.sort_values('Trade Date', ascending=False).head(limit)[
-            ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
+            ['Trade Date', 'year', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'ΔOwn', 'is_sp500']
         ]
         result_type = "recent"
         
@@ -695,18 +717,13 @@ def search_insider_data(query: str, df: pd.DataFrame, client) -> dict:
     else:
         # Sin agregación - devolver transacciones individuales
         sort_by = params.get("sort_by", "date")
+        cols = ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'ΔOwn', 'Owned', 'is_sp500']
         if sort_by == "value":
-            result = filtered.nlargest(limit, 'Value_C')[
-                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
-            ]
+            result = filtered.nlargest(limit, 'Value_C')[cols]
         elif sort_by == "quantity":
-            result = filtered.nlargest(limit, 'Qty')[
-                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
-            ]
+            result = filtered.nlargest(limit, 'Qty')[cols]
         else:
-            result = filtered.sort_values('Trade Date', ascending=False).head(limit)[
-                ['Trade Date', 'Symbol', 'Insider Name', 'Title', 'Trade Type', 'Price', 'Qty', 'Value_C', 'Value_V', 'is_sp500']
-            ]
+            result = filtered.sort_values('Trade Date', ascending=False).head(limit)[cols]
         result_type = "transactions"
     
     return {
@@ -745,11 +762,31 @@ TOP 5 EMPRESAS CON MÁS VENTAS (por valor):
 TOP 5 INSIDERS COMPRADORES:
 {json.dumps(data.get('top_insider_buyers', {}), indent=2)}"""
     elif isinstance(data, pd.DataFrame):
-        if len(data) > 30:
-            data_context = data.head(30).to_string()
-            data_context += f"\n\n... y {len(data) - 30} registros más"
+        # Add year summary if available
+        if 'year' in data.columns or 'Trade Date' in data.columns:
+            try:
+                if 'year' not in data.columns and 'Trade Date' in data.columns:
+                    data['year'] = pd.to_datetime(data['Trade Date']).dt.year
+                year_summary = data.groupby('year').agg({
+                    'Value_C': 'sum',
+                    'Value_V': 'sum'
+                }).to_string()
+                data_str = data.head(40).to_string() if len(data) > 40 else data.to_string()
+                data_context = f"RESUMEN POR AÑO:\n{year_summary}\n\nDETALLE DE TRANSACCIONES:\n{data_str}"
+                if len(data) > 40:
+                    data_context += f"\n\n... y {len(data) - 40} registros más"
+            except:
+                if len(data) > 30:
+                    data_context = data.head(30).to_string()
+                    data_context += f"\n\n... y {len(data) - 30} registros más"
+                else:
+                    data_context = data.to_string()
         else:
-            data_context = data.to_string()
+            if len(data) > 30:
+                data_context = data.head(30).to_string()
+                data_context += f"\n\n... y {len(data) - 30} registros más"
+            else:
+                data_context = data.to_string()
     else:
         data_context = str(data)
     
@@ -762,26 +799,40 @@ TOP 5 INSIDERS COMPRADORES:
                     "content": """Eres un analista experto en insider trading con acceso a más de 764,000 transacciones del mercado estadounidense.
 
 INSTRUCCIONES:
-1. Analiza los datos proporcionados y responde la pregunta de forma clara y estructurada
+1. Analiza los datos proporcionados y responde de forma clara y estructurada
 2. Usa formato de moneda apropiado (millones con M, miles con K)
-3. Destaca patrones importantes:
+3. **INCLUYE DETALLES CLAVE**: precio, cantidad, % cambio en propiedad cuando estén disponibles
+4. Destaca patrones importantes:
    - Concentración de compras/ventas en empresas específicas
    - Insiders notables (CEOs, CFOs) y sus movimientos
-   - Diferencias entre S&P 500 y empresas menores si es relevante
-   - Tendencias temporales si son visibles
-4. Si hay señales significativas (compras grandes de insiders son generalmente más informativas que ventas), menciónalas
+   - **CAMBIOS GRANDES EN PROPIEDAD** (ΔOwn alto = señal fuerte)
+   - Si SeñalC=1 o SeñalV=1, son transacciones significativas
 5. Responde en español
-6. Sé directo y analítico, no repitas los datos literalmente
-7. Máximo 400 palabras
+6. Sé directo y analítico
+7. Máximo 450 palabras
 8. NO inventes datos que no estén en el contexto
 
-CONTEXTO IMPORTANTE:
-- Value_C = Valor de compras (positivo)
-- Value_V = Valor de ventas (negativo)
-- is_sp500 = True si la empresa está en el S&P 500
-- Las ventas de insiders son comunes (compensación, diversificación)
-- Las compras de insiders suelen ser más significativas (usan su propio dinero)
-- Datos desde 2022 hasta 2025"""
+FORMATO SUGERIDO PARA TRANSACCIONES:
+- **Tim Cook** (CEO) - AAPL: Vendió $50M @ $175/acción (10,000 acciones, -2% de su posición)
+- **John Smith** (Dir) - MSFT: Compró $2M @ $420/acción (ΔOwn: +15% 🔥)
+
+CAMPOS DISPONIBLES:
+- Value_C/Value_V: Valor en $ de compras/ventas
+- Price: Precio por acción
+- Qty: Cantidad de acciones
+- ΔOwn: Cambio % en propiedad del insider (importante!)
+- Owned: Acciones totales después de la transacción
+- SeñalC/SeñalV: 1 = transacción significativa, 0 = rutinaria
+- Title: Cargo (CEO, CFO, Dir, 10% Owner, etc.)
+- is_sp500: True si empresa está en S&P 500
+
+INTERPRETACIÓN:
+- Compras de insiders = generalmente señal positiva (usan su dinero)
+- Ventas = comunes por compensación, no siempre negativas
+- ΔOwn alto + compra = muy bullish (aumentan posición significativamente)
+- CEO/CFO comprando = más informativo que director independiente
+
+Datos desde 2022 hasta 2025."""
                 },
                 {
                     "role": "user",
@@ -795,7 +846,7 @@ PREGUNTA: {query}"""
                 }
             ],
             temperature=0.3,
-            max_tokens=800
+            max_tokens=900
         )
         
         answer = response.choices[0].message.content
@@ -888,7 +939,7 @@ Ejemplos:
 # CONGRESS TRADING - SEARCH
 # ============================================
 def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
-    """Busca y filtra datos de trading del Congreso (173K+ transacciones)"""
+    """Busca y filtra datos de trading del Congreso (93K+ transacciones)"""
     
     params = extract_congress_params(query, client)
     filtered = df.copy()
@@ -991,20 +1042,20 @@ def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
     elif aggregation == "top_buys":
         buys = filtered[filtered['Action'].str.contains('Purchase', case=False, na=False)]
         result = buys.nlargest(limit, 'Amount')[
-            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+            ['Purchase Date', 'year', 'Symbol', 'Company', 'Politician', 'Party', 'Chamber', 'Amount', 'Amount Range', 'Gain/Loss', 'Industry', 'Security']
         ]
         result_type = "top_buys"
         
     elif aggregation == "top_sells":
         sells = filtered[filtered['Action'].str.contains('Sale', case=False, na=False)]
         result = sells.nlargest(limit, 'Amount')[
-            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Amount', 'Industry']
+            ['Purchase Date', 'year', 'Symbol', 'Company', 'Politician', 'Party', 'Chamber', 'Amount', 'Amount Range', 'Gain/Loss', 'Industry', 'Security']
         ]
         result_type = "top_sells"
     
     elif aggregation == "recent":
         result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
-            ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Industry']
+            ['Filed Date', 'Purchase Date', 'year', 'Symbol', 'Company', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Amount Range', 'Industry', 'Security']
         ]
         result_type = "recent"
         
@@ -1043,18 +1094,13 @@ def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
     else:
         # Sin agregación - devolver transacciones individuales
         sort_by = params.get("sort_by", "date")
+        cols = ['Purchase Date', 'year', 'Symbol', 'Company', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Amount Range', 'Gain/Loss', 'Industry', 'Security']
         if sort_by == "amount":
-            result = filtered.nlargest(limit, 'Amount')[
-                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
-            ]
+            result = filtered.nlargest(limit, 'Amount')[cols]
         elif sort_by == "gain_loss":
-            result = filtered.nlargest(limit, 'Gain/Loss')[
-                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
-            ]
+            result = filtered.nlargest(limit, 'Gain/Loss')[cols]
         else:
-            result = filtered.sort_values('Filed Date', ascending=False).head(limit)[
-                ['Filed Date', 'year', 'Symbol', 'Politician', 'Party', 'Chamber', 'Action', 'Amount', 'Gain/Loss', 'Industry']
-            ]
+            result = filtered.sort_values('Filed Date', ascending=False).head(limit)[cols]
         result_type = "transactions"
     
     return {
@@ -1069,7 +1115,7 @@ def search_congress_data(query: str, df: pd.DataFrame, client) -> dict:
 # CONGRESS TRADING - RESPONSE GENERATION
 # ============================================
 def generate_congress_response(query: str, search_result: dict, client) -> tuple[str, list, str]:
-    """Genera respuesta analítica sobre trading del Congreso (173K+ transacciones)"""
+    """Genera respuesta analítica sobre trading del Congreso (93K+ transacciones)"""
     
     result_type = search_result['result_type']
     data = search_result['data']
@@ -1130,28 +1176,37 @@ INSTRUCCIONES:
 1. Analiza los datos proporcionados y responde de forma clara y estructurada
 2. **ORGANIZA CRONOLÓGICAMENTE**: Cuando muestres transacciones de un político, agrupa por año (más reciente primero)
 3. Usa formato de moneda apropiado (millones con M, miles con K)
-4. Destaca patrones importantes:
+4. **USA EL NOMBRE DE LA EMPRESA** cuando esté disponible: "NVDA (NVIDIA)" es mejor que solo "NVDA"
+5. Destaca patrones importantes:
    - Evolución temporal de las inversiones
    - Sectores preferidos y cambios a lo largo del tiempo
    - Rendimiento (Gain/Loss) de las operaciones
-5. Sé objetivo y neutral políticamente
-6. Responde en español
-7. Máximo 400 palabras
-8. NO inventes datos que no estén en el contexto
+   - Tipo de instrumento (Stock vs Options)
+6. Sé objetivo y neutral políticamente
+7. Responde en español
+8. Máximo 450 palabras
+9. NO inventes datos que no estén en el contexto
 
-FORMATO SUGERIDO PARA TRANSACCIONES DE UN POLÍTICO:
+FORMATO SUGERIDO PARA TRANSACCIONES:
 **2024:**
-- NVDA: $X (sector)
-- AAPL: $Y (sector)
+- NVDA (NVIDIA): $3M - Rendimiento: +36% (Stock)
+- AVGO (Broadcom): $3M - Rendimiento: +80% (Stock)
 
 **2023:**
 - ...
 
-CONTEXTO IMPORTANTE:
-- Amount = Valor estimado de la transacción (punto medio del rango reportado)
-- Gain/Loss = Rendimiento porcentual de la operación (si está disponible)
-- Los políticos deben reportar transacciones pero con rangos, no valores exactos
-- Datos desde 2014 hasta 2025"""
+CAMPOS DISPONIBLES:
+- Symbol: Ticker de la acción (ej: AAPL)
+- Company: Nombre completo (ej: Apple Inc)
+- Amount: Valor estimado (punto medio del rango)
+- Amount Range: Rango reportado original (ej: "$1,001 - $15,000")
+- Gain/Loss: Rendimiento % de la operación
+- Industry: Sector (Information Technology, Health Care, etc.)
+- Security: Tipo de instrumento (Stock, ST=Stock, OP=Options)
+- Purchase Date: Fecha real de la transacción
+- Filed Date: Fecha de reporte al Congreso
+
+Datos desde 2014 hasta 2025."""
                 },
                 {
                     "role": "user",
@@ -1702,6 +1757,7 @@ def show_sources(results: list, confidence: str = "high", data_type: str = "BUFF
             "aggregated_by_company": "📈 Por Empresa",
             "aggregated_by_insider": "👤 Por Insider",
             "aggregated_by_month": "📅 Por Mes",
+            "aggregated_by_year": "📅 Por Año",
             "transactions": "📋 Transacciones",
             "recent": "🕐 Recientes"
         }
@@ -1808,7 +1864,7 @@ def main():
         st.markdown("""
         <div class="welcome">
             <h1>Pregunta sobre Buffett,<br/>Insiders o el Congreso</h1>
-            <p>Filosofía inversora + 764K insiders + 173K transacciones del Congreso US</p>
+            <p>Filosofía inversora + 764K insiders + 93K transacciones del Congreso US</p>
         </div>
         """, unsafe_allow_html=True)
         
